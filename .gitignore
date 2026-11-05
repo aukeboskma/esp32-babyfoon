@@ -1,0 +1,9 @@
+.esphome/
+secrets.yaml
+__pycache__/
+*.pyc
+.gradle/
+build/
+local.properties
+.idea/
+*.iml

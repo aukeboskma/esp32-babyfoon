@@ -1,0 +1,96 @@
+# =====================================================================
+#  Home Assistant automations voor de babyfoon
+#  Plak ze in automations.yaml, of maak ze na via de UI (YAML-modus).
+#
+#  Vervang overal:
+#    notify.mobile_app_JOUW_TELEFOON  -> je eigen notify-service
+#  Controleer de entity-namen in HA (Instellingen > Apparaten > Babyfoon).
+# =====================================================================
+
+# 1. Melding bij geluid in de babykamer
+- alias: "Babyfoon - geluid gedetecteerd"
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.babyfoon_geluid_gedetecteerd
+      to: "on"
+  actions:
+    - action: notify.mobile_app_JOUW_TELEFOON
+      data:
+        title: "Babyfoon"
+        message: "Geluid in de babykamer ({{ states('sensor.babyfoon_geluidsniveau') }} dBFS)"
+        data:
+          # Android: direct afleveren, eigen meldingskanaal
+          priority: high
+          ttl: 0
+          channel: babyfoon
+    # Niet vaker dan eens per minuut melden
+    - delay: "00:01:00"
+
+# 2. BELANGRIJK: alarm als de babyfoon wegvalt
+#    (stroom eruit, wifi weg, vastgelopen). Een stille babyfoon is
+#    gevaarlijker dan een babyfoon die te veel meldt.
+- alias: "Babyfoon - verbinding verloren"
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: sensor.babyfoon_geluidsniveau
+      to: "unavailable"
+      for: "00:00:30"
+    - trigger: state
+      entity_id: binary_sensor.babyfoon_status
+      to: "off"
+      for: "00:00:30"
+  actions:
+    - action: notify.mobile_app_JOUW_TELEFOON
+      data:
+        title: "Babyfoon OFFLINE"
+        message: "De babyfoon geeft geen signaal meer. Even gaan kijken!"
+        data:
+          # Android: speelt af via het alarmvolume, ook als de telefoon
+          # op stil of "niet storen" staat
+          priority: high
+          ttl: 0
+          channel: alarm_stream
+
+# 3. Bevroren waarde detecteren: als het geluidsniveau 5 minuten
+#    exact gelijk blijft, klopt er waarschijnlijk iets niet.
+- alias: "Babyfoon - meting staat stil"
+  mode: single
+  triggers:
+    - trigger: time_pattern
+      minutes: "/5"
+  conditions:
+    - condition: template
+      value_template: >
+        {{ (now() - states.sensor.babyfoon_geluidsniveau.last_reported).total_seconds() > 300 }}
+  actions:
+    - action: notify.mobile_app_JOUW_TELEFOON
+      data:
+        title: "Babyfoon"
+        message: "Al 5 minuten geen nieuwe meting van de babyfoon."
+        data:
+          priority: high
+          ttl: 0
+          channel: alarm_stream
+
+# =====================================================================
+#  Script: witte ruis afspelen
+#  Zet een mp3 in /config/www/ en hij is bereikbaar als /local/...
+# =====================================================================
+# Plak dit in scripts.yaml:
+#
+# babyfoon_witte_ruis:
+#   alias: "Babyfoon - witte ruis"
+#   sequence:
+#     - action: media_player.volume_set
+#       target:
+#         entity_id: media_player.babyfoon_speaker
+#       data:
+#         volume_level: 0.3
+#     - action: media_player.play_media
+#       target:
+#         entity_id: media_player.babyfoon_speaker
+#       data:
+#         media_content_id: "http://HA-IP-ADRES:8123/local/witte_ruis.mp3"
+#         media_content_type: music

@@ -1,0 +1,119 @@
+# =====================================================================
+#  Babyradar (Seeed MR60BHA2, 60 GHz) - Home Assistant package
+#
+#  ALLEEN INFORMATIEF. Dit is geen medisch apparaat. Geen alarm op
+#  "hartslag te laag" of "geen ademhaling": de radar mist metingen als
+#  de baby beweegt, onder een dik dekbed ligt of buiten de bundel draait.
+#
+#  Installatie:
+#   1. In configuration.yaml (eenmalig):
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   2. Zet dit bestand in /config/packages/babyradar.yaml
+#   3. Vervang de entity-ID's hieronder door die van jouw radar
+#      (Instellingen > Apparaten > MR60BHA2). Zoek/vervang:
+#        sensor.babyradar_hartslag
+#        sensor.babyradar_ademhaling
+#        sensor.babyradar_afstand
+#        binary_sensor.babyradar_aanwezig
+#        light.babyradar_led
+#   4. Vervang notify.mobile_app_JOUW_TELEFOON
+#   5. Herstart Home Assistant
+# =====================================================================
+
+# --- Gemiddelden over 5 minuten: rustiger en betrouwbaarder dan de ruwe waarde
+sensor:
+  - platform: statistics
+    name: "Babyradar hartslag gemiddeld"
+    unique_id: babyradar_hartslag_gem_5min
+    entity_id: sensor.babyradar_hartslag
+    state_characteristic: mean
+    max_age:
+      minutes: 5
+    sampling_size: 300
+    precision: 0
+
+  - platform: statistics
+    name: "Babyradar ademhaling gemiddeld"
+    unique_id: babyradar_ademhaling_gem_5min
+    entity_id: sensor.babyradar_ademhaling
+    state_characteristic: mean
+    max_age:
+      minutes: 5
+    sampling_size: 300
+    precision: 0
+
+  # Hoe onrustig: spreiding van de afstand. Veel beweging = hoge waarde.
+  - platform: statistics
+    name: "Babyradar onrust"
+    unique_id: babyradar_onrust_5min
+    entity_id: sensor.babyradar_afstand
+    state_characteristic: standard_deviation
+    max_age:
+      minutes: 5
+    sampling_size: 300
+    precision: 2
+
+template:
+  - sensor:
+      - name: "Babyradar status"
+        unique_id: babyradar_status_tekst
+        icon: mdi:baby-face-outline
+        state: >
+          {% set aanwezig = is_state('binary_sensor.babyradar_aanwezig', 'on') %}
+          {% set onrust = states('sensor.babyradar_onrust') | float(0) %}
+          {% if states('binary_sensor.babyradar_aanwezig') in ['unavailable', 'unknown'] %}
+            Radar offline
+          {% elif not aanwezig %}
+            Niemand gezien
+          {% elif onrust > 0.15 %}
+            Onrustig / wakker
+          {% else %}
+            Rustig
+          {% endif %}
+
+automation:
+  # LED van de radar uit, zodat hij geen licht geeft in de babykamer
+  - alias: "Babyradar - LED uit"
+    id: babyradar_led_uit
+    triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: state
+        entity_id: light.babyradar_led
+        to: "on"
+    actions:
+      - action: light.turn_off
+        target:
+          entity_id: light.babyradar_led
+
+  # Melding als de radar zelf wegvalt (zelfde idee als bij de babyfoon)
+  - alias: "Babyradar - offline"
+    id: babyradar_offline
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.babyradar_aanwezig
+        to: "unavailable"
+        for: "00:01:00"
+    actions:
+      - action: notify.mobile_app_JOUW_TELEFOON
+        data:
+          title: "Babyradar offline"
+          message: "De radar in de babykamer geeft geen data meer."
+
+  # Seintje als de baby onrustig wordt (informatief, geen alarm)
+  - alias: "Babyradar - onrustig"
+    id: babyradar_onrustig
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: sensor.babyradar_status
+        to: "Onrustig / wakker"
+        for: "00:00:30"
+    actions:
+      - action: notify.mobile_app_JOUW_TELEFOON
+        data:
+          title: "Babyfoon"
+          message: "Het lijkt erop dat de baby onrustig is."
+      - delay: "00:05:00"
