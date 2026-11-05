@@ -6,19 +6,23 @@
 #include "esphome/components/ring_buffer/ring_buffer.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/speaker/speaker.h"
+#include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <vector>
 
 namespace esphome::audio_stream {
 
-static const char *const AUDIO_STREAM_VERSION = "1.4.0";
+class TuneTrigger : public Trigger<> {};
+
+static const char *const AUDIO_STREAM_VERSION = "2.1.0";
 static const uint8_t MAX_SLOTS = 4;
 
 struct ClientSlot {
@@ -47,6 +51,11 @@ class AudioStreamComponent : public Component {
   /// Terugpraten: audio van de app afspelen op deze speaker.
   void set_talk_speaker(speaker::Speaker *spk) { this->talk_speaker_ = spk; }
   void set_talk_volume(float v) { this->talk_volume_ = v; }
+
+  /// Drempel voor "geluid" (alleen doorgeven aan de app via /status)
+  void set_sound_threshold(float db) { this->sound_threshold_db_ = db; }
+  /// Wordt afgevuurd als de app om "ruis inmeten" vraagt (GET /tune)
+  void add_tune_trigger(Trigger<> *t) { this->tune_trigger_ = t; }
 
   bool is_gate_enabled() const { return this->gate_enabled_; }
   float get_gate_threshold() const { return this->gate_threshold_db_; }
@@ -80,6 +89,10 @@ class AudioStreamComponent : public Component {
   uint32_t gate_open_until_{0};
   float gate_gain_{1.0f};
   std::vector<uint8_t> gated_;
+
+  std::atomic<float> sound_threshold_db_{NAN};
+  Trigger<> *tune_trigger_{nullptr};
+  std::atomic<bool> tune_requested_{false};
 
   speaker::Speaker *talk_speaker_{nullptr};
   float talk_volume_{0.5f};

@@ -142,6 +142,11 @@ fun SettingsScreen(settings: Settings, onDone: () -> Unit) {
 
             // ---------------- Algemeen ----------------
             Text("Geluid (voor alle babyfoons)", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Drempel en ruisgrens hieronder gelden alleen als het bordje zelf geen waarde doorgeeft. " +
+                    "Met firmware 2.1 of nieuwer stel je ze per babyfoon in met \"Ruis inmeten\".",
+                style = MaterialTheme.typography.bodySmall, color = Color.Gray,
+            )
             OutlinedTextField(
                 value = threshold, onValueChange = { threshold = it.filter { ch -> ch.isDigit() || ch == '-' } },
                 label = { Text("Drempel melding in dB (bijv. -35, hoger = minder gevoelig)") },

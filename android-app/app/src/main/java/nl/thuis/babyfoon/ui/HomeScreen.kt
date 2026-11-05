@@ -62,6 +62,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import nl.thuis.babyfoon.BabyState
+import nl.thuis.babyfoon.BoardApi
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import nl.thuis.babyfoon.BabyfoonConfig
 import nl.thuis.babyfoon.CameraConfig
 import nl.thuis.babyfoon.LinkStatus
@@ -225,7 +228,45 @@ private fun BabyfoonCard(cfg: BabyfoonConfig, state: BabyState?, ui: MonitorUi) 
                     )
                 }
                 TalkButton(cfg, ui)
+                TuneRow(cfg, state)
             }
+        }
+    }
+}
+
+/** Knop om het bordje de ruis te laten meten en de drempels zelf in te stellen. */
+@Composable
+private fun TuneRow(cfg: BabyfoonConfig, state: BabyState?) {
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val info = buildString {
+                state?.boardSoundThreshold?.let { append("Drempel ${it.toInt()} dB") }
+                state?.boardGateThreshold?.let {
+                    if (isNotEmpty()) append(" · ")
+                    append("ruisgrens ${it.toInt()} dB")
+                }
+            }
+            Text(
+                info.ifBlank { "Drempels uit de app-instellingen" },
+                style = MaterialTheme.typography.bodySmall, color = Color.Gray,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(
+                enabled = !busy,
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        BoardApi.tune(cfg)
+                        busy = false
+                    }
+                },
+            ) { Text(if (busy) "Meten…" else "Ruis inmeten") }
+        }
+        val msg = state?.tuneMessage ?: ""
+        if (msg.isNotBlank()) {
+            Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         }
     }
 }

@@ -7,6 +7,7 @@ Every change gets a new version number. You can see the version in:
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.1.0 | 2026-11-05 | **Noise tune**: the board measures the room noise for 10 s and sets *Ruisgrens* (+5 dB) and *Geluid drempel* (+10 dB) itself. Start it from the "Ruis inmeten" button in Home Assistant, from the app, or by holding the Wi-Fi button for 3 s. The app now uses each board's own thresholds (new `/tune` endpoint, thresholds in `/status`). Requires firmware 2.1.0. |
 | 2.0.0 | 2026-11-05 | App: any number of baby monitors and cameras (add/remove in settings). Listen to all monitors at once, mute each one separately, push-to-talk per monitor, alarm names which monitor lost its connection. Existing settings are migrated. No firmware changes. |
 | 1.5.0 | 2026-11-05 | App: cameras now log in with a token, try HTTP and then HTTPS, and show a clear error message (wrong password, port closed, …). No firmware changes. |
 | 1.4.0 | 2026-11-05 | The Android app is built automatically by GitHub Actions; download the APK from Releases. Fixed signing key so updates install over the previous version. No firmware changes. |

@@ -15,16 +15,17 @@
 #
 #  Nodig: ESPHome 2025.5 of nieuwer (voor sound_level)
 #
-#  VERSIE 1.4.0  (zie ook "Firmwareversie" in Home Assistant)
+#  VERSIE 2.1.0  (zie ook "Firmwareversie" in Home Assistant)
 #   1.0.0  eerste versie: geluidsniveau, stream, knoppen
 #   1.1.0  ruisonderdrukking op de stream
 #   1.2.0  terugpraten vanuit de app
 #   1.3.0  versienummer, IP-adres, volume-schuifjes in Home Assistant
 #   1.4.0  app wordt automatisch gebouwd door GitHub (geen wijziging op het bordje)
+#   2.1.0  'Ruis inmeten': stelt Ruisgrens en Geluid drempel zelf in
 # =====================================================================
 
 substitutions:
-  versie: "1.4.0"
+  versie: "2.1.0"
   name: babyfoon
   friendly_name: Babyfoon
 
@@ -164,6 +165,14 @@ sensor:
       id: peak_level
       name: "Geluidspiek"
 
+  - platform: template
+    id: ruis_gemeten
+    name: "Gemeten ruisniveau"
+    icon: mdi:waveform
+    unit_of_measurement: dBFS
+    accuracy_decimals: 1
+    update_interval: never
+
   - platform: wifi_signal
     name: "WiFi signaal"
     update_interval: 60s
@@ -213,6 +222,9 @@ audio_stream:
   # Ruisonderdrukking: is het stil (onder de grens), dan stuurt hij stilte
   # in plaats van ruis. Boven de grens direct weer geluid. Startwaarden;
   # daarna instelbaar in Home Assistant (zie "Ruisonderdrukking" en "Ruisgrens").
+  # De app kan om "ruis inmeten" vragen
+  on_tune:
+    - script.execute: ruis_inmeten
   noise_gate:
     enabled: true
     threshold: -40          # iets boven het stille niveau (meet dit eerst)
@@ -293,6 +305,63 @@ number:
     max_value: 0
     step: 1
     mode: slider
+    on_value:
+      - lambda: id(stream).set_sound_threshold(x);
+
+# ---------------------------------------------------------------------
+#  Ruis inmeten: 10 seconden luisteren als het stil is, daarna
+#    Ruisgrens       = gemeten ruis + 5 dB
+#    Geluid drempel  = gemeten ruis + 10 dB
+#  Start via de knop in HA, vanuit de app, of WiFi-knop 3 s ingedrukt.
+#  Korte geluidjes tijdens het meten tellen niet mee (stilste 7 van 10 s).
+#  Veiligheid: de drempel wordt nooit hoger dan -25 dB gezet.
+# ---------------------------------------------------------------------
+globals:
+  - id: tune_values
+    type: std::vector<float>
+
+button:
+  - platform: template
+    name: "Ruis inmeten"
+    icon: mdi:tune-vertical
+    on_press:
+      - script.execute: ruis_inmeten
+
+script:
+  - id: ruis_inmeten
+    mode: single
+    then:
+      - logger.log: "Ruis inmeten: 10 seconden, even stil zijn..."
+      - lambda: id(tune_values).clear();
+      - repeat:
+          count: 10
+          then:
+            - delay: 1s
+            - lambda: |-
+                float v = id(rms_level).state;
+                if (!std::isnan(v)) id(tune_values).push_back(v);
+      - if:
+          condition:
+            lambda: return id(tune_values).size() >= 5;
+          then:
+            - lambda: |-
+                auto v = id(tune_values);
+                std::sort(v.begin(), v.end());
+                size_t n = std::min<size_t>(7, v.size());
+                float sum = 0;
+                for (size_t i = 0; i < n; i++) sum += v[i];
+                id(ruis_gemeten).publish_state(sum / n);
+            - number.set:
+                id: ruisgrens
+                value: !lambda return std::min(-30.0f, roundf(id(ruis_gemeten).state + 5.0f));
+            - number.set:
+                id: drempel
+                value: !lambda return std::min(-25.0f, roundf(id(ruis_gemeten).state + 10.0f));
+            - logger.log:
+                format: "Ruis inmeten klaar: ruis %.1f dB, ruisgrens %.0f, drempel %.0f"
+                args: ['id(ruis_gemeten).state', 'id(ruisgrens).state', 'id(drempel).state']
+          else:
+            - logger.log: "Ruis inmeten mislukt: geen metingen"
 
 binary_sensor:
   # Lokaal berekend: werkt ook als HA traag is.
@@ -354,6 +423,12 @@ binary_sensor:
       - delayed_on: 30ms
     on_press:
       - media_player.stop: mp
+    # 3 seconden vasthouden = ruis inmeten
+    on_click:
+      - min_length: 3s
+        max_length: 10s
+        then:
+          - script.execute: ruis_inmeten
 
   # Optioneel: HC-SR501 PIR-sensor op de PIR-aansluiting.
   # Haal de # weg als je er een aansluit.

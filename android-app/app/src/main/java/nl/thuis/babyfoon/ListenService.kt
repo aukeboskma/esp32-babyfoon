@@ -208,6 +208,15 @@ class ListenService : Service() {
             updateStatusNotification("Geen babyfoon ingesteld")
         }
         configs.forEach { cfg -> jobs += scope.launch { streamLoop(streams.getValue(cfg.id)) } }
+        // Drempels van elk bordje ophalen (en elke 30 s verversen)
+        configs.forEach { cfg ->
+            jobs += scope.launch {
+                while (currentCoroutineContext().isActive) {
+                    BoardApi.refresh(cfg)
+                    delay(30_000)
+                }
+            }
+        }
         jobs += scope.launch { watchdog() }
     }
 
@@ -328,7 +337,9 @@ class ListenService : Service() {
      */
     private fun applyGateAndGain(st: Stream, input: ByteArray, out: ByteArray, db: Float, rate: Int) {
         val now = SystemClock.elapsedRealtime()
-        if (!noiseGate || db > gateDb) st.gateOpenUntil = now + GATE_HOLD_MS
+        val board = Monitor.state.value.babies.firstOrNull { it.id == st.cfg.id }
+        val gate = board?.boardGateThreshold ?: gateDb.toFloat()
+        if (!noiseGate || db > gate) st.gateOpenUntil = now + GATE_HOLD_MS
         val target = if (now < st.gateOpenUntil) 1f else 0f
         val up = 1f / (rate * GATE_ATTACK_S)
         val down = 1f / (rate * GATE_RELEASE_S)
@@ -366,7 +377,9 @@ class ListenService : Service() {
 
     private fun handleLevel(st: Stream, db: Float) {
         val now = SystemClock.elapsedRealtime()
-        if (db > thresholdDb) {
+        val board = Monitor.state.value.babies.firstOrNull { it.id == st.cfg.id }
+        val threshold = board?.boardSoundThreshold ?: thresholdDb.toFloat()
+        if (db > threshold) {
             if (st.soundSince == 0L) st.soundSince = now
         } else {
             st.soundSince = 0L

@@ -1,4 +1,4 @@
-"""audio_stream v1.4.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
+"""audio_stream v2.1.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
 
 Gebruik:
     audio_stream:
@@ -14,10 +14,11 @@ Stream:  http://<ip>:8080/audio.wav   (16 bit mono PCM, sample rate van de mic)
 Status:  http://<ip>:8080/status      (JSON)
 """
 
+from esphome import automation
 import esphome.codegen as cg
 from esphome.components import microphone, sensor, speaker
 import esphome.config_validation as cv
-from esphome.const import CONF_ID, CONF_MICROPHONE, CONF_PORT, PLATFORM_ESP32
+from esphome.const import CONF_ID, CONF_MICROPHONE, CONF_PORT, CONF_TRIGGER_ID, PLATFORM_ESP32
 
 AUTO_LOAD = ["audio", "ring_buffer", "sensor", "socket", "speaker"]
 DEPENDENCIES = ["microphone", "network"]
@@ -30,11 +31,13 @@ CONF_NOISE_GATE = "noise_gate"
 CONF_THRESHOLD = "threshold"
 CONF_HOLD = "hold"
 CONF_TALK = "talk"
+CONF_ON_TUNE = "on_tune"
 CONF_SPEAKER = "speaker"
 CONF_VOLUME = "volume"
 
 audio_stream_ns = cg.esphome_ns.namespace("audio_stream")
 AudioStreamComponent = audio_stream_ns.class_("AudioStreamComponent", cg.Component)
+TuneTrigger = audio_stream_ns.class_("TuneTrigger", automation.Trigger.template())
 
 def _consume_sockets(config):
     """Reserveer sockets: 1 luistersocket + 1 per luisteraar."""
@@ -79,6 +82,10 @@ CONFIG_SCHEMA = cv.All(
                     cv.Optional(CONF_VOLUME, default=0.5): cv.percentage,
                 }
             ),
+            # Wordt uitgevoerd als de app op "Ruis inmeten" drukt (GET /tune)
+            cv.Optional(CONF_ON_TUNE): automation.validate_automation(
+                {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TuneTrigger)}
+            ),
             cv.Optional(CONF_CLIENTS): sensor.sensor_schema(
                 accuracy_decimals=0,
                 icon="mdi:headphones",
@@ -120,6 +127,11 @@ async def to_code(config):
         spk = await cg.get_variable(config[CONF_TALK][CONF_SPEAKER])
         cg.add(var.set_talk_speaker(spk))
         cg.add(var.set_talk_volume(config[CONF_TALK][CONF_VOLUME]))
+
+    for conf in config.get(CONF_ON_TUNE, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID])
+        cg.add(var.add_tune_trigger(trigger))
+        await automation.build_automation(trigger, [], conf)
 
     if CONF_CLIENTS in config:
         sens = await sensor.new_sensor(config[CONF_CLIENTS])

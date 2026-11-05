@@ -110,6 +110,9 @@ void AudioStreamComponent::apply_gate_(const std::vector<uint8_t> &in, std::vect
 }
 
 void AudioStreamComponent::loop() {
+  if (this->tune_requested_.exchange(false) && this->tune_trigger_ != nullptr)
+    this->tune_trigger_->trigger();
+
   int n = this->active_clients_.load();
   if (n != this->last_published_) {
     this->last_published_ = n;
@@ -286,6 +289,7 @@ void AudioStreamComponent::handle_client_(uint8_t slot) {
 
   bool is_talk = strncmp(req, "POST /talk", 10) == 0;
   bool is_status = strncmp(req, "GET /status", 11) == 0;
+  bool is_tune = strncmp(req, "GET /tune", 9) == 0 || strncmp(req, "POST /tune", 10) == 0;
   bool is_stream = strncmp(req, "GET /audio.wav", 14) == 0 || strncmp(req, "GET / ", 6) == 0;
 
   if (is_talk) {
@@ -299,13 +303,30 @@ void AudioStreamComponent::handle_client_(uint8_t slot) {
     return;
   }
 
-  if (is_status) {
-    char body[200];
+  if (is_tune) {
+    const char *msg;
+    if (this->tune_trigger_ == nullptr) {
+      msg = "HTTP/1.0 404 Not Found\r\nConnection: close\r\n\r\nInmeten staat niet aan\n";
+    } else {
+      this->tune_requested_ = true;  // uitvoeren in de hoofdlus (thread-veilig)
+      msg = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nInmeten gestart\n";
+    }
+    send_all(sock, msg, strlen(msg));
+  } else if (is_status) {
+    char thr[16];
+    float st = this->sound_threshold_db_.load();
+    if (std::isnan(st))
+      snprintf(thr, sizeof(thr), "null");
+    else
+      snprintf(thr, sizeof(thr), "%.1f", st);
+    char body[320];
     snprintf(body, sizeof(body),
              "{\"version\":\"%s\",\"sample_rate\":%u,\"bits\":16,\"channels\":1,\"clients\":%u,\"max_clients\":%u,"
-             "\"talk\":%s}\n",
+             "\"talk\":%s,\"tune\":%s,\"gate_enabled\":%s,\"gate_threshold\":%.1f,\"sound_threshold\":%s}\n",
              AUDIO_STREAM_VERSION, (unsigned) this->sample_rate_, (unsigned) this->active_clients_.load(),
-             this->max_clients_, this->talk_speaker_ != nullptr ? "true" : "false");
+             this->max_clients_, this->talk_speaker_ != nullptr ? "true" : "false",
+             this->tune_trigger_ != nullptr ? "true" : "false", this->gate_enabled_.load() ? "true" : "false",
+             this->gate_threshold_db_.load(), thr);
     char head[160];
     snprintf(head, sizeof(head),
              "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: %u\r\n"

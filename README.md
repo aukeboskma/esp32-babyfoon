@@ -14,10 +14,11 @@ A DIY baby monitor built on a cheap ESP32-S3 voice board (≈ €15), integrated
 | **Live audio** | The microphone is streamed live at `http://<IP>:8080/audio.wav`. Listen in the app or in VLC. Up to 2 listeners at a time. |
 | **Sound level** | Home Assistant sensor (dBFS), updated every second. |
 | **Sound detected** | Binary sensor with an adjustable **threshold** (slider in HA). Use it for notifications and automations. |
+| **Noise tune** | Press *Ruis inmeten* (in HA, in the app, or hold the Wi-Fi button 3 s): the board listens for 10 s and sets the noise threshold (+5 dB) and sound threshold (+10 dB) itself. Short noises during the measurement are ignored; the sound threshold is never set above −25 dB. |
 | **Noise gate** | Below the **noise threshold**, the board sends silence instead of hiss. Above it, sound passes immediately. Switch and threshold in HA. |
 | **Push-to-talk** | Your voice from the app plays softly through the speaker, with its own **talk-back volume** slider. The stream is muted while you talk (no feedback). |
 | **Speaker / white noise** | Media player in HA for white noise or lullabies. **Volume** slider in HA, kept in sync with the physical buttons. Maximum volume is capped. |
-| **Buttons** | Volume +, Volume −, and the Wi-Fi button (stops playback). |
+| **Buttons** | Volume +, Volume −, and the Wi-Fi button (short press: stop playback; hold 3 s: noise tune). |
 | **Diagnostics** | IP address, Wi-Fi signal, uptime, firmware version, number of listeners. |
 
 ### Android app
@@ -73,8 +74,7 @@ The app's user interface is in Dutch. See [`android-app/README.md`](android-app/
 
 ### 2. Home Assistant settings
 
-- **Geluid drempel** (sound threshold): measure the level when the room is quiet (e.g. −45 dB) and set the threshold about **10 dB higher** (−35).
-- **Ruisgrens** (noise threshold): just above the quiet level (e.g. −40).
+- Press **Ruis inmeten** while the room is quiet. The board sets **Ruisgrens** (noise threshold) and **Geluid drempel** (sound threshold) automatically. You can still fine-tune both sliders by hand.
 - **Automations**: copy them from `ha_automations.yaml` and replace `notify.mobile_app_JOUW_TELEFOON` with your phone's notify service.
 
 ### 3. The Android app
@@ -111,7 +111,8 @@ Do this before you rely on it:
 
 - `components/audio_stream` is a custom ESPHome component. It reads the microphone through a `MicrophoneSource` (16 kHz, 16-bit mono). Each listener gets its own ring buffer and TCP task.
   - `GET /audio.wav`: endless WAV stream
-  - `GET /status`: JSON with version, sample rate and listener count
+  - `GET /status`: JSON with version, sample rate, listener count and thresholds
+  - `GET /tune`: start the 10-second noise measurement
   - `POST /talk`: raw PCM (16-bit, 16 kHz) played on the speaker through an extra mixer input
 - On a slow connection, the oldest audio is overwritten, so latency never builds up.
 - The noise gate runs on the board (10 ms attack, 2.5 s hold, 400 ms release), so it works in any player.

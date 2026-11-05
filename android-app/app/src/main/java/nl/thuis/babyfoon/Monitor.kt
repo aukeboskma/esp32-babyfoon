@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 /** Houd gelijk met versionName in app/build.gradle.kts */
-const val APP_VERSION = "2.0.0"
+const val APP_VERSION = "2.1.0"
 
 enum class LinkStatus { UIT, VERBINDEN, VERBONDEN, KWIJT }
 
@@ -18,6 +18,12 @@ data class BabyState(
     val soundActive: Boolean = false,
     val gateOpen: Boolean = true,
     val message: String = "",
+    /** Drempels zoals ingesteld op het bordje (null = app-instelling gebruiken). */
+    val boardSoundThreshold: Float? = null,
+    val boardGateThreshold: Float? = null,
+    val boardVersion: String = "",
+    val canTune: Boolean = false,
+    val tuneMessage: String = "",
 )
 
 data class MonitorUi(
