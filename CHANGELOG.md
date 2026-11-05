@@ -7,6 +7,7 @@ Every change gets a new version number. You can see the version in:
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.5.0 | 2026-11-05 | App: cameras now log in with a token, try HTTP and then HTTPS, and show a clear error message (wrong password, port closed, …). No firmware changes. |
 | 1.4.0 | 2026-11-05 | The Android app is built automatically by GitHub Actions; download the APK from Releases. Fixed signing key so updates install over the previous version. No firmware changes. |
 | 1.3.1 | 2026-11-05 | Documentation in English; radar integration removed (docs only — firmware and app stay 1.3.0) |
 | 1.3.0 | 2026-11-05 | Version numbers, IP address in diagnostics, "Volume" and "Talk-back volume" sliders in Home Assistant |

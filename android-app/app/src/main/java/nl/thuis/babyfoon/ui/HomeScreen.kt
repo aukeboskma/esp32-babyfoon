@@ -236,20 +236,20 @@ private fun TalkButton(ui: MonitorUi, settings: Settings) {
 @Composable
 private fun CameraTile(cfg: CameraConfig, onClick: () -> Unit) {
     var bitmap by remember(cfg) { mutableStateOf<Bitmap?>(null) }
-    var failed by remember(cfg) { mutableStateOf(false) }
+    var error by remember(cfg) { mutableStateOf<String?>(null) }
 
     // Elke 3 seconden een nieuw stilstaand beeld, alleen zolang dit scherm open is
     LaunchedEffect(cfg) {
         if (!cfg.configured) return@LaunchedEffect
         while (true) {
-            val b = Reolink.snapshot(cfg)
-            if (b != null) {
-                bitmap = b
-                failed = false
+            val r = Reolink.snapshot(cfg)
+            if (r.value != null) {
+                bitmap = r.value
+                error = null
             } else {
-                failed = true
+                error = r.error
             }
-            delay(3000)
+            delay(if (r.value != null) 3000 else 10000)
         }
     }
 
@@ -272,7 +272,7 @@ private fun CameraTile(cfg: CameraConfig, onClick: () -> Unit) {
                 Text(
                     when {
                         !cfg.configured -> "Nog niet ingesteld"
-                        failed -> "Geen beeld (IP of inlog klopt niet?)"
+                        error != null -> error ?: ""
                         else -> "Laden…"
                     },
                     color = Color.Gray,

@@ -12,8 +12,8 @@ android {
         applicationId = "nl.thuis.babyfoon"
         minSdk = 29          // Android 10 of nieuwer
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.4.0"
+        versionCode = 5
+        versionName = "1.5.0"
     }
 
     // Vaste sleutel in de repo, zodat elke build over de vorige heen

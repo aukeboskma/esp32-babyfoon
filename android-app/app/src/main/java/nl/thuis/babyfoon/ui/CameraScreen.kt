@@ -81,7 +81,19 @@ fun CameraScreen(config: CameraConfig, onBack: () -> Unit) {
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
-                error = "Geen beeld: ${e.errorCodeName}"
+                error = when (e.errorCode) {
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+                        "Geen live beeld: RTSP staat waarschijnlijk uit in de camera " +
+                            "(Reolink-app > Netwerk > Geavanceerd > Poortinstellingen)"
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+                    PlaybackException.ERROR_CODE_IO_NO_PERMISSION ->
+                        "Geen live beeld: inlog geweigerd"
+                    PlaybackException.ERROR_CODE_DECODING_FAILED,
+                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
+                        "Telefoon kan dit beeld niet afspelen; probeer zonder HD"
+                    else -> "Geen live beeld: ${e.errorCodeName}"
+                }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -140,7 +152,7 @@ fun CameraScreen(config: CameraConfig, onBack: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
-                error?.let { Text(it, color = Color.White) }
+                error?.let { Text(it, color = Color.White, modifier = Modifier.padding(16.dp)) }
             }
 
             Row(

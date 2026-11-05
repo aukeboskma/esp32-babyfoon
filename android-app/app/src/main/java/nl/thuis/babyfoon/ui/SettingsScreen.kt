@@ -214,7 +214,7 @@ private fun CameraFields(index: Int, c: CameraConfig, onChange: (CameraConfig) -
         OutlinedButton(onClick = {
             result = "Bezig…"
             scope.launch {
-                result = if (Reolink.snapshot(c) != null) "Werkt!" else "Geen beeld. Klopt IP en inlog?"
+                result = Reolink.test(c)
             }
         }) { Text("Test camera") }
         Text(result, style = MaterialTheme.typography.bodySmall)
