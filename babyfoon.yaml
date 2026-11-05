@@ -15,15 +15,16 @@
 #
 #  Nodig: ESPHome 2025.5 of nieuwer (voor sound_level)
 #
-#  VERSIE 1.3.0  (zie ook "Firmwareversie" in Home Assistant)
+#  VERSIE 1.4.0  (zie ook "Firmwareversie" in Home Assistant)
 #   1.0.0  eerste versie: geluidsniveau, stream, knoppen
 #   1.1.0  ruisonderdrukking op de stream
 #   1.2.0  terugpraten vanuit de app
 #   1.3.0  versienummer, IP-adres, volume-schuifjes in Home Assistant
+#   1.4.0  app wordt automatisch gebouwd door GitHub (geen wijziging op het bordje)
 # =====================================================================
 
 substitutions:
-  versie: "1.3.0"
+  versie: "1.4.0"
   name: babyfoon
   friendly_name: Babyfoon
 

@@ -1,4 +1,4 @@
-"""audio_stream v1.3.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
+"""audio_stream v1.4.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
 
 Gebruik:
     audio_stream:

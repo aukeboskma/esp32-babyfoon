@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 /** Houd gelijk met versionName in app/build.gradle.kts */
-const val APP_VERSION = "1.3.0"
+const val APP_VERSION = "1.4.0"
 
 enum class LinkStatus { UIT, VERBINDEN, VERBONDEN, KWIJT }
 

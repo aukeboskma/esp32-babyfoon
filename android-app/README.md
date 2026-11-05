@@ -14,7 +14,11 @@ One app for the baby monitor audio and two Reolink cameras. Works **only on your
 - **Noise gate and playback gain**: adjustable in the settings.
 - **Cameras**: two tiles with a still image refreshed every 3 s. Tap for live video (RTSP). For the Reolink E1 Zoom, **hold** the arrow and zoom buttons to pan, tilt and zoom.
 
-## Install (one time, about 20 minutes)
+## Install
+
+**Easiest:** download the APK from the [latest release](https://github.com/aukeboskma/esp32-babyfoon/releases/latest) on your phone and open it. Allow "install unknown apps" for your browser once. Newer versions install over the old one and keep your settings.
+
+## Build it yourself (optional, about 20 minutes)
 
 1. **Install Android Studio**: <https://developer.android.com/studio>
 2. **Open the project**: choose *Open* and select the `android-app` folder. Wait until "Gradle sync" finishes (the first time downloads a lot).

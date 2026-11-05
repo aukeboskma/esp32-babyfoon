@@ -18,7 +18,7 @@
 
 namespace esphome::audio_stream {
 
-static const char *const AUDIO_STREAM_VERSION = "1.3.0";
+static const char *const AUDIO_STREAM_VERSION = "1.4.0";
 static const uint8_t MAX_SLOTS = 4;
 
 struct ClientSlot {

@@ -12,13 +12,29 @@ android {
         applicationId = "nl.thuis.babyfoon"
         minSdk = 29          // Android 10 of nieuwer
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.3.0"
+        versionCode = 4
+        versionName = "1.4.0"
+    }
+
+    // Vaste sleutel in de repo, zodat elke build over de vorige heen
+    // geïnstalleerd kan worden (ook builds van GitHub Actions).
+    // Let op: deze sleutel is openbaar; prima voor een hobby-app die je zelf installeert.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("babyfoon-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

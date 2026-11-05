@@ -45,7 +45,7 @@ The app's user interface is in Dutch. See [`android-app/README.md`](android-app/
 - **A USB-C cable that carries data**, and a decent 5 V power supply.
 - **Home Assistant** with the **ESPHome** add-on (ESPHome 2026.5 or newer).
 - **Windows**: the [CH340 driver](https://www.wch-ic.com/downloads/CH341SER_EXE.html).
-- For the app: **Android Studio** and an Android phone (Android 10 or newer).
+- For the app: an Android phone (Android 10 or newer).
 
 ---
 
@@ -78,9 +78,16 @@ The app's user interface is in Dutch. See [`android-app/README.md`](android-app/
 
 ### 3. The Android app
 
-1. Install [Android Studio](https://developer.android.com/studio) and open the `android-app` folder.
-2. Enable **USB debugging** on your phone (*About phone* → tap *Build number* 7 times → *Developer options*).
-3. Connect the phone and click **▶ Run**.
+**Easiest: download the APK.**
+1. On your phone, open the [latest release](https://github.com/aukeboskma/esp32-babyfoon/releases/latest) and download `babyfoon-x.y.z.apk`.
+2. Open the file. Android asks once to allow installing apps from your browser — allow it.
+3. To update later, just download and install the newer APK over the old one; your settings are kept.
+
+GitHub builds a new APK automatically every time the app code changes.
+
+**Or build it yourself:** install [Android Studio](https://developer.android.com/studio), open the `android-app` folder, enable USB debugging on your phone and click **▶ Run**.
+
+**Then:**
 4. In the app (gear icon), enter the board's IP address and tap *Test babyfoon*.
 5. Tap **Batterijbesparing uitzetten** (disable battery optimization). On Samsung, Xiaomi and OnePlus, also set the app to *Unrestricted*.
 
