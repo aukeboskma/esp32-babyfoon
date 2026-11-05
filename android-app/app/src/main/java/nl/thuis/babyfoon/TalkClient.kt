@@ -18,7 +18,7 @@ import kotlin.math.max
 
 /**
  * Terugpraten: neemt de microfoon van de telefoon op en stuurt het
- * rechtstreeks naar de babyfoon (POST /talk, 16 bit mono 16 kHz).
+ * rechtstreeks naar één babyfoon (POST /talk, 16 bit mono 16 kHz).
  * Alleen gebruiken zolang de knop is ingedrukt.
  */
 object TalkClient {
@@ -30,20 +30,20 @@ object TalkClient {
 
     /** Vereist dat RECORD_AUDIO al is toegestaan. */
     @SuppressLint("MissingPermission")
-    fun start(host: String, port: Int) {
-        if (job?.isActive == true || host.isBlank()) return
-        Monitor.update { it.copy(talking = true, talkError = "") }
+    fun start(target: BabyfoonConfig) {
+        if (job?.isActive == true || !target.configured) return
+        Monitor.update { it.copy(talkingId = target.id, talkError = "") }
         job = scope.launch {
             var rec: AudioRecord? = null
             var ns: NoiseSuppressor? = null
             try {
                 val s = Socket()
                 socket = s
-                s.connect(InetSocketAddress(host, port), 3000)
+                s.connect(InetSocketAddress(target.host, target.port), 3000)
                 s.tcpNoDelay = true
                 val out = s.getOutputStream()
                 out.write(
-                    ("POST /talk HTTP/1.0\r\nHost: $host\r\n" +
+                    ("POST /talk HTTP/1.0\r\nHost: ${target.host}\r\n" +
                         "Content-Type: audio/L16;rate=$RATE;channels=1\r\n\r\n").toByteArray()
                 )
 
@@ -67,7 +67,9 @@ object TalkClient {
                 }
             } catch (e: Exception) {
                 if (Monitor.state.value.talking) {
-                    Monitor.update { it.copy(talkError = "Terugpraten lukt niet: ${e.message ?: "geen verbinding"}") }
+                    Monitor.update {
+                        it.copy(talkError = "Terugpraten naar ${target.name} lukt niet: ${e.message ?: "geen verbinding"}")
+                    }
                 }
             } finally {
                 try { rec?.stop() } catch (_: Exception) {}
@@ -75,7 +77,7 @@ object TalkClient {
                 ns?.release()
                 try { socket?.close() } catch (_: Exception) {}
                 socket = null
-                Monitor.update { it.copy(talking = false) }
+                Monitor.update { it.copy(talkingId = null) }
             }
         }
     }
@@ -84,6 +86,6 @@ object TalkClient {
         job?.cancel()
         // Socket sluiten breekt een blokkerende write direct af
         try { socket?.close() } catch (_: Exception) {}
-        Monitor.update { it.copy(talking = false) }
+        Monitor.update { it.copy(talkingId = null) }
     }
 }

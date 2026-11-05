@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ListenService.createChannels(this)
         val settings = Settings(this)
-        Monitor.update { it.copy(playAudio = settings.playAudio) }
+        Monitor.update { it.copy(playAudio = settings.playAudio, mutedIds = settings.mutedIds) }
         setContent {
             BabyfoonTheme {
                 App(settings)
@@ -70,9 +70,13 @@ private fun App(settings: Settings) {
                 screen = Screen.Home
             },
         )
-        is Screen.Camera -> CameraScreen(
-            config = settings.camera(s.index),
-            onBack = { screen = Screen.Home },
-        )
+        is Screen.Camera -> {
+            val cam = settings.cameras.getOrNull(s.index)
+            if (cam == null) {
+                screen = Screen.Home
+            } else {
+                CameraScreen(config = cam, onBack = { screen = Screen.Home })
+            }
+        }
     }
 }

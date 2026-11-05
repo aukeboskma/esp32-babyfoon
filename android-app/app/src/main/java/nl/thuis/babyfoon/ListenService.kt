@@ -34,13 +34,15 @@ import java.io.EOFException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
- * Achtergronddienst die de babyfoon-stream ontvangt, afspeelt, het
- * geluidsniveau meet en ALARM geeft als er geen data meer binnenkomt.
+ * Achtergronddienst die naar ALLE ingestelde babyfoons tegelijk luistert:
+ * per babyfoon de stream ontvangen, afspelen, het geluidsniveau meten,
+ * en ALARM geven als één van de babyfoons geen data meer stuurt.
  * Draait als voorgrondservice zodat Android hem 's nachts niet stopt.
  */
 class ListenService : Service() {
@@ -56,7 +58,7 @@ class ListenService : Service() {
 
         private const val ID_STATUS = 1
         private const val ID_ALARM = 2
-        private const val ID_SOUND = 3
+        private const val ID_SOUND_BASE = 100
 
         /** Na "gezien" opnieuw alarm als de verbinding na deze tijd nog weg is. */
         private const val ACK_REARM_MS = 5 * 60 * 1000L
@@ -87,6 +89,15 @@ class ListenService : Service() {
             Monitor.update { it.copy(playAudio = on) }
         }
 
+        /** Eén babyfoon wel of niet laten horen (bewaken gaat altijd door). */
+        fun setMuted(ctx: Context, id: String, muted: Boolean) {
+            val s = Settings(ctx)
+            val set = s.mutedIds.toMutableSet()
+            if (muted) set.add(id) else set.remove(id)
+            s.mutedIds = set
+            Monitor.update { it.copy(mutedIds = set) }
+        }
+
         fun createChannels(ctx: Context) {
             val nm = ctx.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
@@ -100,7 +111,7 @@ class ListenService : Service() {
             nm.createNotificationChannel(
                 NotificationChannel(CH_ALARM, "Verbinding kwijt (alarm)", NotificationManager.IMPORTANCE_HIGH)
                     .apply {
-                        description = "Alarm als de babyfoon geen geluid meer doorstuurt"
+                        description = "Alarm als een babyfoon geen geluid meer doorstuurt"
                         // Het alarmgeluid speelt de app zelf af via het alarmvolume
                         setSound(null, null)
                         enableVibration(true)
@@ -110,13 +121,22 @@ class ListenService : Service() {
         }
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var streamJob: Job? = null
-    private var watchdogJob: Job? = null
+    /** Toestand per babyfoon die alleen de dienst nodig heeft. */
+    private class Stream(val cfg: BabyfoonConfig, val index: Int) {
+        @Volatile var connection: HttpURLConnection? = null
+        @Volatile var lastDataAt = 0L
+        var gateGain = 0f
+        var gateOpenUntil = 0L
+        var soundSince = 0L
+        var lastSoundNotify = 0L
+    }
 
-    @Volatile private var connection: HttpURLConnection? = null
-    @Volatile private var lastDataAt = 0L
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val jobs = mutableListOf<Job>()
+    private val streams = ConcurrentHashMap<String, Stream>()
     @Volatile private var ackUntil = 0L
+    /** Welke babyfoons zaten in het laatste alarm (nieuw verlies = opnieuw alarm). */
+    private var alarmedIds: Set<String> = emptySet()
 
     // Instellingen in het geheugen (elke seconde ververst door de waakhond)
     @Volatile private var thresholdDb = -35
@@ -125,12 +145,6 @@ class ListenService : Service() {
     @Volatile private var noiseGate = true
     @Volatile private var gateDb = -40
     @Volatile private var playbackGain = 4
-
-    private var gateGain = 0f
-    private var gateOpenUntil = 0L
-
-    private var soundSince = 0L
-    private var lastSoundNotify = 0L
 
     private var alarmPlayer: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -167,35 +181,53 @@ class ListenService : Service() {
             this, ID_STATUS, statusNotification("Verbinden…"),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         )
-        if (streamJob?.isActive == true) return
+        if (jobs.any { it.isActive }) return
 
         refreshSettings()
         acquireLocks()
-        // Geef bij het starten wat extra tijd voordat het alarm afgaat
-        lastDataAt = SystemClock.elapsedRealtime() + 5000
         ackUntil = 0L
-        Monitor.update {
-            MonitorUi(running = true, status = LinkStatus.VERBINDEN, playAudio = settings.playAudio)
+        alarmedIds = emptySet()
+
+        val configs = settings.babyfoons.filter { it.configured }
+        streams.clear()
+        // Geef bij het starten wat extra tijd voordat het alarm afgaat
+        val start = SystemClock.elapsedRealtime() + 5000
+        configs.forEachIndexed { i, cfg ->
+            streams[cfg.id] = Stream(cfg, i).apply { lastDataAt = start }
         }
-        streamJob = scope.launch { streamLoop() }
-        watchdogJob = scope.launch { watchdog() }
+
+        Monitor.update {
+            MonitorUi(
+                running = true,
+                babies = configs.map { BabyState(id = it.id, name = it.name.ifBlank { it.host }) },
+                playAudio = settings.playAudio,
+                mutedIds = settings.mutedIds,
+            )
+        }
+        if (configs.isEmpty()) {
+            updateStatusNotification("Geen babyfoon ingesteld")
+        }
+        configs.forEach { cfg -> jobs += scope.launch { streamLoop(streams.getValue(cfg.id)) } }
+        jobs += scope.launch { watchdog() }
     }
 
     private fun shutdown() {
         TalkClient.stop()
-        streamJob?.cancel()
-        watchdogJob?.cancel()
-        connection?.disconnect()
+        jobs.forEach { it.cancel() }
+        jobs.clear()
+        streams.values.forEach { it.connection?.disconnect() }
         stopAlarmSound()
         releaseLocks()
         getSystemService(NotificationManager::class.java).cancel(ID_ALARM)
-        Monitor.update { MonitorUi(running = false, playAudio = settings.playAudio) }
+        Monitor.update {
+            MonitorUi(running = false, playAudio = settings.playAudio, mutedIds = settings.mutedIds)
+        }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
-        connection?.disconnect()
+        streams.values.forEach { it.connection?.disconnect() }
         stopAlarmSound()
         releaseLocks()
         scope.cancel()
@@ -203,26 +235,23 @@ class ListenService : Service() {
     }
 
     // ------------------------------------------------------------------
-    //  Stream ontvangen en afspelen
+    //  Stream ontvangen en afspelen (één per babyfoon)
     // ------------------------------------------------------------------
-    private suspend fun streamLoop() {
+    private suspend fun streamLoop(st: Stream) {
+        val cfg = st.cfg
         while (currentCoroutineContext().isActive) {
-            val host = settings.babyfoonHost
-            if (host.isBlank()) {
-                Monitor.update { it.copy(message = "Stel eerst het IP-adres van de babyfoon in") }
-                delay(3000)
-                continue
-            }
             var track: AudioTrack? = null
             try {
-                val conn = URL("http://$host:${settings.babyfoonPort}/audio.wav")
-                    .openConnection() as HttpURLConnection
+                val conn = URL("http://${cfg.host}:${cfg.port}/audio.wav").openConnection() as HttpURLConnection
                 conn.connectTimeout = 4000
                 conn.readTimeout = 4000
                 conn.useCaches = false
-                connection = conn
+                st.connection = conn
                 if (conn.responseCode != 200) {
-                    throw IllegalStateException("Babyfoon antwoordt met ${conn.responseCode}")
+                    throw IllegalStateException(
+                        if (conn.responseCode == 503) "Te veel luisteraars op deze babyfoon"
+                        else "Babyfoon antwoordt met ${conn.responseCode}"
+                    )
                 }
                 val input = BufferedInputStream(conn.inputStream, 8192)
 
@@ -242,57 +271,31 @@ class ListenService : Service() {
                 var first = true
                 while (currentCoroutineContext().isActive) {
                     readFully(input, buf)
-                    lastDataAt = SystemClock.elapsedRealtime()
+                    st.lastDataAt = SystemClock.elapsedRealtime()
                     if (first) {
                         first = false
-                        onConnected()
+                        onConnected(st)
                     }
                     val db = rmsDb(buf)
-                    handleLevel(db)
-                    applyGateAndGain(buf, out, db, rate)
-                    val st = Monitor.state.value
-                    // Tijdens terugpraten niet afspelen, anders zingt het rond
-                    track.setVolume(if (st.playAudio && !st.talking) 1f else 0f)
+                    handleLevel(st, db)
+                    applyGateAndGain(st, buf, out, db, rate)
+                    val ui = Monitor.state.value
+                    val audible = ui.playAudio && !ui.talking && cfg.id !in ui.mutedIds
+                    track.setVolume(if (audible) 1f else 0f)
                     // Niet blokkerend: liever een stukje overslaan dan vertraging opbouwen
                     track.write(out, 0, out.size, AudioTrack.WRITE_NON_BLOCKING)
                 }
             } catch (e: Exception) {
                 if (!currentCoroutineContext().isActive) break
-                onDisconnected(e.message ?: e.javaClass.simpleName)
+                onDisconnected(st, e.message ?: e.javaClass.simpleName)
             } finally {
                 try { track?.stop() } catch (_: Exception) {}
                 track?.release()
-                connection?.disconnect()
-                connection = null
+                st.connection?.disconnect()
+                st.connection = null
             }
             delay(1500) // even wachten en opnieuw proberen
         }
-    }
-
-    /**
-     * Ruisonderdrukking + versterking. Boven de ruisgrens gaat het geluid
-     * direct open en blijft het nog even open; daaronder zacht uitfaden.
-     * Alleen het AFSPELEN wordt stil: meten, meldingen en alarm lopen door.
-     */
-    private fun applyGateAndGain(input: ByteArray, out: ByteArray, db: Float, rate: Int) {
-        val now = SystemClock.elapsedRealtime()
-        if (!noiseGate || db > gateDb) gateOpenUntil = now + GATE_HOLD_MS
-        val target = if (now < gateOpenUntil) 1f else 0f
-        val up = 1f / (rate * GATE_ATTACK_S)
-        val down = 1f / (rate * GATE_RELEASE_S)
-        val gain = playbackGain.toFloat()
-
-        val n = input.size / 2
-        for (i in 0 until n) {
-            gateGain = if (gateGain < target) minOf(target, gateGain + up)
-            else maxOf(target, gateGain - down)
-            val s = ((input[2 * i].toInt() and 0xFF) or (input[2 * i + 1].toInt() shl 8)).toShort().toInt()
-            val v = (s * gateGain * gain).toInt().coerceIn(-32768, 32767)
-            out[2 * i] = (v and 0xFF).toByte()
-            out[2 * i + 1] = ((v shr 8) and 0xFF).toByte()
-        }
-        val open = target > 0f
-        if (open != Monitor.state.value.gateOpen) Monitor.update { it.copy(gateOpen = open) }
     }
 
     private fun buildTrack(rate: Int): AudioTrack {
@@ -318,42 +321,67 @@ class ListenService : Service() {
             .build()
     }
 
-    private fun onConnected() {
-        stopAlarmSound()
-        ackUntil = 0L
-        getSystemService(NotificationManager::class.java).cancel(ID_ALARM)
-        Monitor.update {
-            it.copy(status = LinkStatus.VERBONDEN, alarm = false, alarmAcknowledged = false, message = "")
-        }
-        updateStatusNotification("Luistert naar de babykamer")
-    }
-
-    private fun onDisconnected(reason: String) {
-        Monitor.update {
-            val s = if (it.status == LinkStatus.VERBONDEN) LinkStatus.KWIJT else it.status
-            it.copy(status = if (it.alarm) LinkStatus.KWIJT else s, message = reason, levelDb = -90f)
-        }
-        updateStatusNotification("Verbinding kwijt, opnieuw proberen…")
-    }
-
-    private fun handleLevel(db: Float) {
+    /**
+     * Ruisonderdrukking + versterking. Boven de ruisgrens gaat het geluid
+     * direct open en blijft het nog even open; daaronder zacht uitfaden.
+     * Alleen het AFSPELEN wordt stil: meten, meldingen en alarm lopen door.
+     */
+    private fun applyGateAndGain(st: Stream, input: ByteArray, out: ByteArray, db: Float, rate: Int) {
         val now = SystemClock.elapsedRealtime()
-        val loud = db > thresholdDb
-        if (loud) {
-            if (soundSince == 0L) soundSince = now
-        } else {
-            soundSince = 0L
-        }
-        val active = soundSince != 0L && now - soundSince >= SOUND_MIN_MS
-        Monitor.update { it.copy(levelDb = db, soundActive = active) }
+        if (!noiseGate || db > gateDb) st.gateOpenUntil = now + GATE_HOLD_MS
+        val target = if (now < st.gateOpenUntil) 1f else 0f
+        val up = 1f / (rate * GATE_ATTACK_S)
+        val down = 1f / (rate * GATE_RELEASE_S)
+        val gain = playbackGain.toFloat()
 
-        if (active && notifyOnSound && now - lastSoundNotify > SOUND_NOTIFY_COOLDOWN_MS) {
-            lastSoundNotify = now
+        var g = st.gateGain
+        val n = input.size / 2
+        for (i in 0 until n) {
+            g = if (g < target) minOf(target, g + up) else maxOf(target, g - down)
+            val s = ((input[2 * i].toInt() and 0xFF) or (input[2 * i + 1].toInt() shl 8)).toShort().toInt()
+            val v = (s * g * gain).toInt().coerceIn(-32768, 32767)
+            out[2 * i] = (v and 0xFF).toByte()
+            out[2 * i + 1] = ((v shr 8) and 0xFF).toByte()
+        }
+        st.gateGain = g
+        val open = target > 0f
+        val cur = Monitor.state.value.babies.firstOrNull { it.id == st.cfg.id }
+        if (cur != null && cur.gateOpen != open) Monitor.updateBaby(st.cfg.id) { it.copy(gateOpen = open) }
+    }
+
+    private fun onConnected(st: Stream) {
+        Monitor.updateBaby(st.cfg.id) { it.copy(status = LinkStatus.VERBONDEN, message = "") }
+        checkAlarmCleared()
+        updateStatusSummary()
+    }
+
+    private fun onDisconnected(st: Stream, reason: String) {
+        Monitor.updateBaby(st.cfg.id) {
+            val s = if (it.status == LinkStatus.VERBONDEN || it.status == LinkStatus.KWIJT) LinkStatus.KWIJT
+            else it.status
+            it.copy(status = s, message = reason, levelDb = -90f, soundActive = false)
+        }
+        updateStatusSummary()
+    }
+
+    private fun handleLevel(st: Stream, db: Float) {
+        val now = SystemClock.elapsedRealtime()
+        if (db > thresholdDb) {
+            if (st.soundSince == 0L) st.soundSince = now
+        } else {
+            st.soundSince = 0L
+        }
+        val active = st.soundSince != 0L && now - st.soundSince >= SOUND_MIN_MS
+        Monitor.updateBaby(st.cfg.id) { it.copy(levelDb = db, soundActive = active) }
+
+        if (active && notifyOnSound && now - st.lastSoundNotify > SOUND_NOTIFY_COOLDOWN_MS) {
+            st.lastSoundNotify = now
+            val name = st.cfg.name.ifBlank { "de babykamer" }
             notify(
-                ID_SOUND,
+                ID_SOUND_BASE + st.index,
                 NotificationCompat.Builder(this, CH_SOUND)
                     .setSmallIcon(R.drawable.ic_stat_baby)
-                    .setContentTitle("Geluid in de babykamer")
+                    .setContentTitle("Geluid bij $name")
                     .setContentText("Niveau ${db.toInt()} dB")
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -366,42 +394,48 @@ class ListenService : Service() {
     }
 
     // ------------------------------------------------------------------
-    //  Waakhond: geen data = alarm
+    //  Waakhond: een babyfoon zonder data = alarm
     // ------------------------------------------------------------------
     private suspend fun watchdog() {
         while (currentCoroutineContext().isActive) {
             delay(1000)
             refreshSettings()
             val now = SystemClock.elapsedRealtime()
-            val silentMs = now - lastDataAt
-            val limit = alarmAfterMs
-            val state = Monitor.state.value
 
-            if (silentMs > limit) {
-                if (state.status == LinkStatus.VERBONDEN) {
-                    Monitor.update { it.copy(status = LinkStatus.KWIJT) }
+            val lost = streams.values.filter { now - it.lastDataAt > alarmAfterMs }
+            lost.forEach { st ->
+                val cur = Monitor.state.value.babies.firstOrNull { it.id == st.cfg.id }
+                if (cur?.status == LinkStatus.VERBONDEN) {
+                    Monitor.updateBaby(st.cfg.id) { it.copy(status = LinkStatus.KWIJT) }
                 }
-                val acknowledged = now < ackUntil
-                if (!state.alarm || (state.alarmAcknowledged && !acknowledged)) {
-                    raiseAlarm(silentMs / 1000)
-                }
+            }
+            if (lost.isEmpty()) continue
+
+            val lostIds = lost.map { it.cfg.id }.toSet()
+            val state = Monitor.state.value
+            val acknowledged = now < ackUntil
+            val newLoss = !alarmedIds.containsAll(lostIds)
+            if (!state.alarm || newLoss || (state.alarmAcknowledged && !acknowledged)) {
+                alarmedIds = lostIds
+                raiseAlarm(lost.map { it.cfg.name.ifBlank { it.cfg.host } }, (now - lost.minOf { it.lastDataAt }) / 1000)
             }
         }
     }
 
-    private fun refreshSettings() {
-        thresholdDb = settings.thresholdDb
-        notifyOnSound = settings.notifyOnSound
-        alarmAfterMs = settings.alarmAfterSec * 1000L
-        noiseGate = settings.noiseGate
-        gateDb = settings.gateDb
-        playbackGain = settings.playbackGain.coerceIn(1, 16)
+    private fun checkAlarmCleared() {
+        val now = SystemClock.elapsedRealtime()
+        val stillLost = streams.values.filter { now - it.lastDataAt > alarmAfterMs }
+        if (stillLost.isEmpty() && Monitor.state.value.alarm) {
+            stopAlarmSound()
+            ackUntil = 0L
+            alarmedIds = emptySet()
+            getSystemService(NotificationManager::class.java).cancel(ID_ALARM)
+            Monitor.update { it.copy(alarm = false, alarmAcknowledged = false, alarmNames = emptyList()) }
+        }
     }
 
-    private fun raiseAlarm(seconds: Long) {
-        Monitor.update {
-            it.copy(alarm = true, alarmAcknowledged = false, status = LinkStatus.KWIJT)
-        }
+    private fun raiseAlarm(names: List<String>, seconds: Long) {
+        Monitor.update { it.copy(alarm = true, alarmAcknowledged = false, alarmNames = names) }
         startAlarmSound()
         val ack = PendingIntent.getService(
             this, 10,
@@ -412,7 +446,7 @@ class ListenService : Service() {
             ID_ALARM,
             NotificationCompat.Builder(this, CH_ALARM)
                 .setSmallIcon(R.drawable.ic_stat_baby)
-                .setContentTitle("Babyfoon: verbinding kwijt!")
+                .setContentTitle("Verbinding kwijt: ${names.joinToString(", ")}")
                 .setContentText("Al $seconds seconden geen geluid ontvangen. Ga even kijken.")
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -463,6 +497,26 @@ class ListenService : Service() {
     // ------------------------------------------------------------------
     //  Hulpjes
     // ------------------------------------------------------------------
+    private fun refreshSettings() {
+        thresholdDb = settings.thresholdDb
+        notifyOnSound = settings.notifyOnSound
+        alarmAfterMs = settings.alarmAfterSec * 1000L
+        noiseGate = settings.noiseGate
+        gateDb = settings.gateDb
+        playbackGain = settings.playbackGain.coerceIn(1, 16)
+    }
+
+    private fun updateStatusSummary() {
+        val babies = Monitor.state.value.babies
+        val ok = babies.count { it.status == LinkStatus.VERBONDEN }
+        val text = when {
+            babies.isEmpty() -> "Geen babyfoon ingesteld"
+            ok == babies.size -> "Luistert naar " + babies.joinToString(" en ") { it.name }
+            else -> "$ok van ${babies.size} verbonden"
+        }
+        updateStatusNotification(text)
+    }
+
     private fun acquireLocks() {
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)

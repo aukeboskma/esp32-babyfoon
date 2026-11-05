@@ -28,9 +28,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,11 +42,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import nl.thuis.babyfoon.BabyfoonConfig
 import nl.thuis.babyfoon.CameraConfig
 import nl.thuis.babyfoon.Reolink
 import nl.thuis.babyfoon.Settings
@@ -54,31 +59,25 @@ import java.net.URL
 @Composable
 fun SettingsScreen(settings: Settings, onDone: () -> Unit) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
-    var host by remember { mutableStateOf(settings.babyfoonHost) }
-    var port by remember { mutableStateOf(settings.babyfoonPort.toString()) }
+    val babies = remember { mutableStateListOf<BabyfoonConfig>().apply { addAll(settings.babyfoons) } }
+    val cams = remember { mutableStateListOf<CameraConfig>().apply { addAll(settings.cameras) } }
     var threshold by remember { mutableStateOf(settings.thresholdDb.toString()) }
     var alarmAfter by remember { mutableStateOf(settings.alarmAfterSec.toString()) }
     var notifySound by remember { mutableStateOf(settings.notifyOnSound) }
     var noiseGate by remember { mutableStateOf(settings.noiseGate) }
     var gateDb by remember { mutableStateOf(settings.gateDb.toString()) }
     var gain by remember { mutableStateOf(settings.playbackGain.toString()) }
-    val cams = remember {
-        List(Settings.CAMERA_COUNT) { mutableStateOf(settings.camera(it)) }
-    }
-    var testResult by remember { mutableStateOf("") }
 
     fun save() {
-        settings.babyfoonHost = host
-        settings.babyfoonPort = port.toIntOrNull() ?: 8080
+        settings.babyfoons = babies.toList()
+        settings.cameras = cams.toList()
         settings.thresholdDb = (threshold.toIntOrNull() ?: -35).coerceIn(-90, 0)
         settings.alarmAfterSec = (alarmAfter.toIntOrNull() ?: 10).coerceIn(5, 120)
         settings.notifyOnSound = notifySound
         settings.noiseGate = noiseGate
         settings.gateDb = (gateDb.toIntOrNull() ?: -40).coerceIn(-90, 0)
         settings.playbackGain = (gain.toIntOrNull() ?: 4).coerceIn(1, 16)
-        cams.forEachIndexed { i, c -> settings.saveCamera(i, c.value) }
     }
 
     Scaffold(
@@ -101,18 +100,48 @@ fun SettingsScreen(settings: Settings, onDone: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Babyfoon", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = host, onValueChange = { host = it },
-                label = { Text("IP-adres (bijv. 192.168.1.50)") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            // ---------------- Babyfoons ----------------
+            Text("Babyfoons (${babies.size})", style = MaterialTheme.typography.titleLarge)
+            babies.forEachIndexed { i, b ->
+                key(b.id) {
+                    BabyfoonFields(
+                        b,
+                        onChange = { babies[i] = it },
+                        onRemove = { babies.removeAt(i) },
+                    )
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
+            OutlinedButton(onClick = {
+                babies.add(BabyfoonConfig(name = "Babyfoon ${babies.size + 1}", host = ""))
+            }) { Text("+ Babyfoon toevoegen") }
+            Text(
+                "Wijzigingen in babyfoons gelden na Stoppen en opnieuw Starten.",
+                style = MaterialTheme.typography.bodySmall, color = Color.Gray,
             )
-            OutlinedTextField(
-                value = port, onValueChange = { port = it.filter(Char::isDigit) },
-                label = { Text("Poort") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            // ---------------- Camera's ----------------
+            Text("Camera's (${cams.size})", style = MaterialTheme.typography.titleLarge)
+            cams.forEachIndexed { i, c ->
+                key(c.id) {
+                    CameraFields(
+                        c,
+                        onChange = { cams[i] = it },
+                        onRemove = { cams.removeAt(i) },
+                    )
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
+            OutlinedButton(onClick = {
+                cams.add(CameraConfig(name = "Camera ${cams.size + 1}", host = "", user = "", password = "", ptz = false))
+            }) { Text("+ Camera toevoegen") }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            // ---------------- Algemeen ----------------
+            Text("Geluid (voor alle babyfoons)", style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(
                 value = threshold, onValueChange = { threshold = it.filter { ch -> ch.isDigit() || ch == '-' } },
                 label = { Text("Drempel melding in dB (bijv. -35, hoger = minder gevoelig)") },
@@ -145,22 +174,10 @@ fun SettingsScreen(settings: Settings, onDone: () -> Unit) {
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = {
-                    testResult = "Bezig…"
-                    scope.launch { testResult = testBabyfoon(host, port.toIntOrNull() ?: 8080) }
-                }) { Text("Test babyfoon") }
-                Text(testResult, style = MaterialTheme.typography.bodySmall)
-            }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            cams.forEachIndexed { i, state ->
-                CameraFields(i, state.value) { state.value = it }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            }
-
-            Text("Telefoon", style = MaterialTheme.typography.titleMedium)
+            Text("Telefoon", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Zet batterijbesparing uit voor deze app, anders kan Android de babyfoon 's nachts stoppen.",
                 style = MaterialTheme.typography.bodySmall,
@@ -175,18 +192,59 @@ fun SettingsScreen(settings: Settings, onDone: () -> Unit) {
             Text(
                 "App-versie ${nl.thuis.babyfoon.APP_VERSION}",
                 style = MaterialTheme.typography.bodySmall,
-                color = androidx.compose.ui.graphics.Color.Gray,
+                color = Color.Gray,
             )
         }
     }
 }
 
 @Composable
-private fun CameraFields(index: Int, c: CameraConfig, onChange: (CameraConfig) -> Unit) {
+private fun BabyfoonFields(b: BabyfoonConfig, onChange: (BabyfoonConfig) -> Unit, onRemove: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf(b.port.toString()) }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(b.name.ifBlank { "Babyfoon" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRemove) { Text("Verwijderen", color = Rood) }
+    }
+    OutlinedTextField(
+        value = b.name, onValueChange = { onChange(b.copy(name = it)) },
+        label = { Text("Naam (bijv. Eva)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = b.host, onValueChange = { onChange(b.copy(host = it)) },
+        label = { Text("IP-adres (bijv. 192.168.178.180)") },
+        singleLine = true, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+    )
+    OutlinedTextField(
+        value = port,
+        onValueChange = {
+            port = it.filter(Char::isDigit)
+            onChange(b.copy(port = port.toIntOrNull() ?: 8080))
+        },
+        label = { Text("Poort (standaard 8080)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = {
+            result = "Bezig…"
+            scope.launch { result = testBabyfoon(b.host, b.port) }
+        }) { Text("Test babyfoon") }
+        Text(result, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun CameraFields(c: CameraConfig, onChange: (CameraConfig) -> Unit, onRemove: () -> Unit) {
     val scope = rememberCoroutineScope()
     var result by remember { mutableStateOf("") }
 
-    Text("Camera ${index + 1}", style = MaterialTheme.typography.titleMedium)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(c.name.ifBlank { "Camera" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRemove) { Text("Verwijderen", color = Rood) }
+    }
     OutlinedTextField(
         value = c.name, onValueChange = { onChange(c.copy(name = it)) },
         label = { Text("Naam") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -213,9 +271,7 @@ private fun CameraFields(index: Int, c: CameraConfig, onChange: (CameraConfig) -
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedButton(onClick = {
             result = "Bezig…"
-            scope.launch {
-                result = Reolink.test(c)
-            }
+            scope.launch { result = Reolink.test(c) }
         }) { Text("Test camera") }
         Text(result, style = MaterialTheme.typography.bodySmall)
     }

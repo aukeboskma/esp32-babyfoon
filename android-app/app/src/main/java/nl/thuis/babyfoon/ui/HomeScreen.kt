@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import nl.thuis.babyfoon.BabyState
+import nl.thuis.babyfoon.BabyfoonConfig
 import nl.thuis.babyfoon.CameraConfig
 import nl.thuis.babyfoon.LinkStatus
 import nl.thuis.babyfoon.ListenService
@@ -78,6 +80,9 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
 ) {
     val ui by Monitor.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val babyfoons = remember(settingsVersion) { settings.babyfoons }
+    val cameras = remember(settingsVersion) { settings.cameras }
 
     Scaffold(
         topBar = {
@@ -100,12 +105,46 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (ui.alarm) AlarmBanner(ui)
-            BabyfoonCard(ui, settings)
 
-            Text("Camera's", style = MaterialTheme.typography.titleMedium)
-            for (i in 0 until Settings.CAMERA_COUNT) {
-                val cfg = remember(settingsVersion) { settings.camera(i) }
-                CameraTile(cfg, onClick = { onOpenCamera(i) })
+            if (babyfoons.isEmpty()) {
+                Text("Nog geen babyfoon ingesteld. Tik op het tandwiel rechtsboven.", color = Color.Gray)
+            }
+
+            // Grote start/stop-knop voor alle babyfoons samen
+            if (ui.running) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Geluid laten horen", Modifier.weight(1f))
+                    Switch(
+                        checked = ui.playAudio,
+                        onCheckedChange = { ListenService.setPlayAudio(context, it) },
+                    )
+                }
+            } else if (babyfoons.isNotEmpty()) {
+                Button(
+                    onClick = { ListenService.start(context) },
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                ) { Text("Start babyfoon", fontSize = 20.sp) }
+            }
+
+            for (cfg in babyfoons) {
+                val state = ui.babies.firstOrNull { it.id == cfg.id }
+                BabyfoonCard(cfg, state, ui)
+            }
+            if (ui.talkError.isNotBlank()) {
+                Text(ui.talkError, style = MaterialTheme.typography.bodySmall, color = Rood)
+            }
+
+            if (ui.running) {
+                OutlinedButton(onClick = { ListenService.stop(context) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Stoppen")
+                }
+            }
+
+            if (cameras.isNotEmpty()) {
+                Text("Camera's", style = MaterialTheme.typography.titleMedium)
+                cameras.forEachIndexed { i, cam ->
+                    CameraTile(cam, onClick = { onOpenCamera(i) })
+                }
             }
         }
     }
@@ -117,12 +156,12 @@ private fun AlarmBanner(ui: MonitorUi) {
     Card(colors = CardDefaults.cardColors(containerColor = Rood)) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                "Verbinding met de babyfoon kwijt!",
+                "Verbinding kwijt: ${ui.alarmNames.joinToString(", ")}",
                 color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 20.sp,
             )
             Text(
                 if (ui.alarmAcknowledged) "Gezien. Over 5 minuten opnieuw alarm als hij nog weg is."
-                else "Ga even kijken in de babykamer.",
+                else "Ga even kijken.",
                 color = Color.Black,
             )
             if (!ui.alarmAcknowledged) {
@@ -137,77 +176,73 @@ private fun AlarmBanner(ui: MonitorUi) {
 }
 
 @Composable
-private fun BabyfoonCard(ui: MonitorUi, settings: Settings) {
+private fun BabyfoonCard(cfg: BabyfoonConfig, state: BabyState?, ui: MonitorUi) {
     val context = LocalContext.current
+    val status = state?.status ?: LinkStatus.UIT
+    val muted = cfg.id in ui.mutedIds
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val (kleur, tekst) = when (ui.status) {
-                    LinkStatus.UIT -> Color.Gray to "Uit"
-                    LinkStatus.VERBINDEN -> Oranje to "Verbinden…"
-                    LinkStatus.VERBONDEN -> Groen to "Verbonden"
-                    LinkStatus.KWIJT -> Rood to "Verbinding kwijt"
+                val (kleur, tekst) = when (status) {
+                    LinkStatus.UIT -> Color.Gray to "uit"
+                    LinkStatus.VERBINDEN -> Oranje to "verbinden…"
+                    LinkStatus.VERBONDEN -> Groen to "verbonden"
+                    LinkStatus.KWIJT -> Rood to "verbinding kwijt"
                 }
                 Box(Modifier.size(14.dp).clip(CircleShape).background(kleur))
                 Spacer(Modifier.size(10.dp))
-                Text(tekst, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(cfg.name.ifBlank { cfg.host }, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.size(8.dp))
+                Text(tekst, color = Color.Gray)
                 Spacer(Modifier.weight(1f))
-                if (ui.soundActive) {
+                if (state?.soundActive == true) {
                     Text("Geluid!", color = MaterialTheme.colorScheme.secondary, fontSize = 18.sp)
-                } else if (ui.status == LinkStatus.VERBONDEN && !ui.gateOpen) {
-                    Text("Stil (ruis gedempt)", color = Color.Gray)
+                } else if (status == LinkStatus.VERBONDEN && state?.gateOpen == false) {
+                    Text("stil", color = Color.Gray)
                 }
             }
 
             // Volumemeter: -90 dB (stil) tot 0 dB (maximaal)
-            val level = ((ui.levelDb + 90f) / 90f).coerceIn(0f, 1f)
+            val level = (((state?.levelDb ?: -90f) + 90f) / 90f).coerceIn(0f, 1f)
             LinearProgressIndicator(
-                progress = { if (ui.status == LinkStatus.VERBONDEN) level else 0f },
+                progress = { if (status == LinkStatus.VERBONDEN) level else 0f },
                 modifier = Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(7.dp)),
-                color = if (ui.soundActive) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                color = if (state?.soundActive == true) MaterialTheme.colorScheme.secondary
+                else MaterialTheme.colorScheme.primary,
             )
 
-            if (ui.message.isNotBlank() && ui.status != LinkStatus.VERBONDEN) {
-                Text(ui.message, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            val msg = state?.message ?: ""
+            if (msg.isNotBlank() && status != LinkStatus.VERBONDEN) {
+                Text(msg, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
 
             if (ui.running) {
-                TalkButton(ui, settings)
-                if (ui.talkError.isNotBlank()) {
-                    Text(ui.talkError, style = MaterialTheme.typography.bodySmall, color = Rood)
-                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Geluid laten horen", Modifier.weight(1f))
+                    Text("Deze babyfoon horen", Modifier.weight(1f))
                     Switch(
-                        checked = ui.playAudio,
-                        onCheckedChange = { ListenService.setPlayAudio(context, it) },
+                        checked = !muted,
+                        onCheckedChange = { ListenService.setMuted(context, cfg.id, !it) },
                     )
                 }
-                OutlinedButton(onClick = { ListenService.stop(context) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Stoppen")
-                }
-            } else {
-                Button(
-                    onClick = { ListenService.start(context) },
-                    modifier = Modifier.fillMaxWidth().height(64.dp),
-                ) { Text("Start babyfoon", fontSize = 20.sp) }
+                TalkButton(cfg, ui)
             }
         }
     }
 }
 
-/** Ingedrukt houden = praten via de speaker in de babykamer. */
+/** Ingedrukt houden = praten via de speaker van deze babyfoon. */
 @Composable
-private fun TalkButton(ui: MonitorUi, settings: Settings) {
+private fun TalkButton(cfg: BabyfoonConfig, ui: MonitorUi) {
     val context = LocalContext.current
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val talkingHere = ui.talkingId == cfg.id
     Box(
         Modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(64.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (ui.talking) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant)
-            .pointerInput(Unit) {
+            .background(if (talkingHere) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant)
+            .pointerInput(cfg.id) {
                 detectTapGestures(
                     onPress = {
                         val granted = ContextCompat.checkSelfPermission(
@@ -216,7 +251,7 @@ private fun TalkButton(ui: MonitorUi, settings: Settings) {
                         if (!granted) {
                             askMic.launch(Manifest.permission.RECORD_AUDIO)
                         } else {
-                            TalkClient.start(settings.babyfoonHost, settings.babyfoonPort)
+                            TalkClient.start(cfg)
                             tryAwaitRelease()
                             TalkClient.stop()
                         }
@@ -226,9 +261,10 @@ private fun TalkButton(ui: MonitorUi, settings: Settings) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (ui.talking) "Je praat nu… loslaten om te stoppen" else "Ingedrukt houden om te praten",
-            fontSize = 18.sp,
-            color = if (ui.talking) Color.Black else MaterialTheme.colorScheme.onSurface,
+            if (talkingHere) "Je praat nu… loslaten om te stoppen"
+            else "Ingedrukt houden om te praten",
+            fontSize = 17.sp,
+            color = if (talkingHere) Color.Black else MaterialTheme.colorScheme.onSurface,
         )
     }
 }

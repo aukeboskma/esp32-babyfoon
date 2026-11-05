@@ -23,13 +23,14 @@ A DIY baby monitor built on a cheap ESP32-S3 voice board (≈ €15), integrated
 ### Android app
 | Feature | Description |
 |---|---|
+| **Multiple monitors** | Add as many baby monitors as you like (e.g. one per child). Listen to all of them at once and mute each one separately. |
 | **Listen** | Live audio, keeps working with the screen off (foreground service). |
 | **Level meter** | See whether there is sound, even with playback muted. |
 | **Sound notification** | When the level exceeds the threshold. |
-| **Connection-loss alarm** | After 10 s without audio data, an alarm plays on the **alarm volume** — even when the phone is on silent. |
-| **Push-to-talk** | Hold the button to talk. |
+| **Connection-loss alarm** | If any monitor sends no audio for 10 s, an alarm names it and plays on the **alarm volume** — even when the phone is on silent. |
+| **Push-to-talk** | Hold the button on a monitor's card to talk to that room. |
 | **Noise gate + gain** | Adjustable in the app. |
-| **Cameras** | Two Reolink cameras: still image on the home screen, live RTSP video with one tap. Pan/tilt/zoom for the E1 Zoom. |
+| **Cameras** | Any number of Reolink cameras: still image on the home screen, live RTSP video with one tap. Pan/tilt/zoom for the E1 Zoom. |
 
 The app's user interface is in Dutch. See [`android-app/README.md`](android-app/README.md).
 
