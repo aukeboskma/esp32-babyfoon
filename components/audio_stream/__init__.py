@@ -1,4 +1,4 @@
-"""audio_stream v2.1.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
+"""audio_stream v2.2.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
 
 Gebruik:
     audio_stream:
@@ -32,6 +32,7 @@ CONF_THRESHOLD = "threshold"
 CONF_HOLD = "hold"
 CONF_TALK = "talk"
 CONF_ON_TUNE = "on_tune"
+CONF_HIGH_PASS = "high_pass"
 CONF_SPEAKER = "speaker"
 CONF_VOLUME = "volume"
 
@@ -82,6 +83,10 @@ CONFIG_SCHEMA = cv.All(
                     cv.Optional(CONF_VOLUME, default=0.5): cv.percentage,
                 }
             ),
+            # Bromfilter: hoogdoorlaatfilter in Hz (0 = uit)
+            cv.Optional(CONF_HIGH_PASS, default="150Hz"): cv.Any(
+                cv.All(cv.frequency, cv.Range(min=0, max=1000)), cv.one_of(0)
+            ),
             # Wordt uitgevoerd als de app op "Ruis inmeten" drukt (GET /tune)
             cv.Optional(CONF_ON_TUNE): automation.validate_automation(
                 {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TuneTrigger)}
@@ -117,6 +122,8 @@ async def to_code(config):
     cg.add(var.set_port(config[CONF_PORT]))
     cg.add(var.set_max_clients(config[CONF_MAX_CLIENTS]))
     cg.add(var.set_buffer_duration(config[CONF_BUFFER_DURATION]))
+
+    cg.add(var.set_high_pass(float(config[CONF_HIGH_PASS])))
 
     gate = config[CONF_NOISE_GATE]
     cg.add(var.set_gate_enabled(gate["enabled"]))

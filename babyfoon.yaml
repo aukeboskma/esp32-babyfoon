@@ -15,17 +15,18 @@
 #
 #  Nodig: ESPHome 2025.5 of nieuwer (voor sound_level)
 #
-#  VERSIE 2.1.0  (zie ook "Firmwareversie" in Home Assistant)
+#  VERSIE 2.2.0  (zie ook "Firmwareversie" in Home Assistant)
 #   1.0.0  eerste versie: geluidsniveau, stream, knoppen
 #   1.1.0  ruisonderdrukking op de stream
 #   1.2.0  terugpraten vanuit de app
 #   1.3.0  versienummer, IP-adres, volume-schuifjes in Home Assistant
 #   1.4.0  app wordt automatisch gebouwd door GitHub (geen wijziging op het bordje)
 #   2.1.0  'Ruis inmeten': stelt Ruisgrens en Geluid drempel zelf in
+#   2.2.0  bromfilter op de stream (haalt 50 Hz netbrom en lage dreun weg)
 # =====================================================================
 
 substitutions:
-  versie: "2.1.0"
+  versie: "2.2.0"
   name: babyfoon
   friendly_name: Babyfoon
 
@@ -213,6 +214,9 @@ audio_stream:
   port: 8080
   max_clients: 2          # bijvoorbeeld twee telefoons
   buffer_duration: 500ms
+  # Bromfilter: alles onder deze frequentie wordt weggefilterd (50 Hz netbrom,
+  # lage dreun). Huilen en stemmen blijven. Hoger = minder brom, 0 = uit.
+  high_pass: 150Hz
   clients:
     name: "Luisteraars"
   # Terugpraten vanuit de app (knop ingedrukt houden)

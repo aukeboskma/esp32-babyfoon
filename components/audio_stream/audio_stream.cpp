@@ -47,15 +47,20 @@ void AudioStreamComponent::setup() {
     if (!any)
       return;  // niemand luistert: geen werk doen
 
-    const std::vector<uint8_t> *send = &data;
+    const std::vector<uint8_t> *src = &data;
+    if (this->high_pass_hz_ > 0.0f) {
+      this->apply_high_pass_(data, this->filtered_);
+      src = &this->filtered_;
+    }
+    const std::vector<uint8_t> *send = src;
     const uint32_t now_ms = millis();
     if (this->talking_.load() || (int32_t) (this->mute_until_.load() - now_ms) > 0) {
       // Tijdens terugpraten stilte sturen, anders hoor je jezelf terug
-      this->gated_.assign(data.size(), 0);
+      this->gated_.assign(src->size(), 0);
       this->gate_gain_ = 0.0f;
       send = &this->gated_;
     } else if (this->gate_enabled_.load()) {
-      this->apply_gate_(data, this->gated_);
+      this->apply_gate_(*src, this->gated_);
       send = &this->gated_;
     } else {
       this->gate_gain_ = 1.0f;
@@ -66,6 +71,8 @@ void AudioStreamComponent::setup() {
     }
   });
 
+  this->setup_high_pass_();
+
   // De microfoon blijft altijd aan (de geluidssensor gebruikt hem ook).
   this->mic_source_->start();
 
@@ -73,6 +80,48 @@ void AudioStreamComponent::setup() {
                   &this->server_task_handle_) != pdPASS) {
     ESP_LOGE(TAG, "Kon servertaak niet starten");
     this->mark_failed();
+  }
+}
+
+// Hoogdoorlaatfilter: twee identieke 2e-orde Butterworth-secties (RBJ-formules).
+// Bij 150 Hz: 50 Hz netbrom ~ -38 dB, 100 Hz ~ -14 dB; huilen (300+ Hz) blijft.
+void AudioStreamComponent::setup_high_pass_() {
+  if (this->high_pass_hz_ <= 0.0f)
+    return;
+  const float fs = (float) this->sample_rate_;
+  const float w0 = 2.0f * (float) M_PI * this->high_pass_hz_ / fs;
+  const float cosw = std::cos(w0);
+  const float alpha = std::sin(w0) / (2.0f * 0.70710678f);
+  const float a0 = 1.0f + alpha;
+  for (auto &bq : this->hp_) {
+    bq.b0 = ((1.0f + cosw) / 2.0f) / a0;
+    bq.b1 = (-(1.0f + cosw)) / a0;
+    bq.b2 = ((1.0f + cosw) / 2.0f) / a0;
+    bq.a1 = (-2.0f * cosw) / a0;
+    bq.a2 = (1.0f - alpha) / a0;
+    bq.z1 = bq.z2 = 0.0f;
+  }
+}
+
+void AudioStreamComponent::apply_high_pass_(const std::vector<uint8_t> &in, std::vector<uint8_t> &out) {
+  const size_t n = in.size() / 2;
+  out.resize(n * 2);
+  const int16_t *src = reinterpret_cast<const int16_t *>(in.data());
+  int16_t *dst = reinterpret_cast<int16_t *>(out.data());
+  for (size_t i = 0; i < n; i++) {
+    float x = (float) src[i];
+    for (auto &bq : this->hp_) {
+      // Transposed direct form II
+      float y = bq.b0 * x + bq.z1;
+      bq.z1 = bq.b1 * x - bq.a1 * y + bq.z2;
+      bq.z2 = bq.b2 * x - bq.a2 * y;
+      x = y;
+    }
+    if (x > 32767.0f)
+      x = 32767.0f;
+    else if (x < -32768.0f)
+      x = -32768.0f;
+    dst[i] = (int16_t) x;
   }
 }
 
@@ -129,9 +178,11 @@ void AudioStreamComponent::dump_config() {
                 "  Max luisteraars: %u\n"
                 "  Sample rate: %u Hz, 16 bit mono\n"
                 "  Buffer: %u ms\n"
-                "  Ruisonderdrukking: %s (grens %.0f dB)",
+                "  Ruisonderdrukking: %s (grens %.0f dB)\n"
+                "  Bromfilter: %.0f Hz",
                 AUDIO_STREAM_VERSION, this->port_, this->max_clients_, (unsigned) this->sample_rate_,
-                (unsigned) this->buffer_ms_, this->gate_enabled_.load() ? "aan" : "uit", this->gate_threshold_db_.load());
+                (unsigned) this->buffer_ms_, this->gate_enabled_.load() ? "aan" : "uit", this->gate_threshold_db_.load(),
+                this->high_pass_hz_);
 }
 
 // ---------------------------------------------------------------------

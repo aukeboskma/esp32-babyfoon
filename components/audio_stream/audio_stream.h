@@ -22,7 +22,7 @@ namespace esphome::audio_stream {
 
 class TuneTrigger : public Trigger<> {};
 
-static const char *const AUDIO_STREAM_VERSION = "2.1.0";
+static const char *const AUDIO_STREAM_VERSION = "2.2.0";
 static const uint8_t MAX_SLOTS = 4;
 
 struct ClientSlot {
@@ -52,6 +52,9 @@ class AudioStreamComponent : public Component {
   void set_talk_speaker(speaker::Speaker *spk) { this->talk_speaker_ = spk; }
   void set_talk_volume(float v) { this->talk_volume_ = v; }
 
+  /// Brom-filter: hoogdoorlaatfilter (0 = uit). Haalt 50 Hz netbrom en lage dreun weg.
+  void set_high_pass(float hz) { this->high_pass_hz_ = hz; }
+
   /// Drempel voor "geluid" (alleen doorgeven aan de app via /status)
   void set_sound_threshold(float db) { this->sound_threshold_db_ = db; }
   /// Wordt afgevuurd als de app om "ruis inmeten" vraagt (GET /tune)
@@ -67,6 +70,8 @@ class AudioStreamComponent : public Component {
   int claim_slot_(int sock);
   void release_slot_(uint8_t slot);
   void apply_gate_(const std::vector<uint8_t> &in, std::vector<uint8_t> &out);
+  void apply_high_pass_(const std::vector<uint8_t> &in, std::vector<uint8_t> &out);
+  void setup_high_pass_();
   void handle_talk_(int sock, const char *leftover, size_t leftover_len);
 
   microphone::MicrophoneSource *mic_source_{nullptr};
@@ -91,6 +96,15 @@ class AudioStreamComponent : public Component {
   std::vector<uint8_t> gated_;
 
   std::atomic<float> sound_threshold_db_{NAN};
+
+  // Hoogdoorlaatfilter: twee Butterworth-biquads achter elkaar (4e orde, 24 dB/octaaf)
+  float high_pass_hz_{0.0f};
+  struct Biquad {
+    float b0{1}, b1{0}, b2{0}, a1{0}, a2{0};
+    float z1{0}, z2{0};
+  };
+  Biquad hp_[2];
+  std::vector<uint8_t> filtered_;
   Trigger<> *tune_trigger_{nullptr};
   std::atomic<bool> tune_requested_{false};
 

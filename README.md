@@ -14,6 +14,7 @@ A DIY baby monitor built on a cheap ESP32-S3 voice board (≈ €15), integrated
 | **Live audio** | The microphone is streamed live at `http://<IP>:8080/audio.wav`. Listen in the app or in VLC. Up to 2 listeners at a time. |
 | **Sound level** | Home Assistant sensor (dBFS), updated every second. |
 | **Sound detected** | Binary sensor with an adjustable **threshold** (slider in HA). Use it for notifications and automations. |
+| **Hum filter** | A 4th-order high-pass filter (default 150 Hz) removes mains hum and low rumble from the stream. Crying and voices are not affected. |
 | **Noise tune** | Press *Ruis inmeten* (in HA, in the app, or hold the Wi-Fi button 3 s): the board listens for 10 s and sets the noise threshold (+5 dB) and sound threshold (+10 dB) itself. Short noises during the measurement are ignored; the sound threshold is never set above −25 dB. |
 | **Noise gate** | Below the **noise threshold**, the board sends silence instead of hiss. Above it, sound passes immediately. Switch and threshold in HA. |
 | **Push-to-talk** | Your voice from the app plays softly through the speaker, with its own **talk-back volume** slider. The stream is muted while you talk (no feedback). |
@@ -115,6 +116,7 @@ Do this before you rely on it:
   - `GET /tune`: start the 10-second noise measurement
   - `POST /talk`: raw PCM (16-bit, 16 kHz) played on the speaker through an extra mixer input
 - On a slow connection, the oldest audio is overwritten, so latency never builds up.
+- A hum filter (two Butterworth biquads, 150 Hz) runs before the noise gate.
 - The noise gate runs on the board (10 ms attack, 2.5 s hold, 400 ms release), so it works in any player.
 - The app uses a non-blocking `AudioTrack` and a watchdog that raises an alarm when no data arrives for too long.
 
