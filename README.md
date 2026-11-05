@@ -1,61 +1,59 @@
-# ESP32 Babyfoon
+# ESP32 Baby Monitor
 
-Een zelfgebouwde babyfoon op een goedkoop ESP32-S3-bordje (± €15), gekoppeld aan **Home Assistant** en met een eigen **Android-app**. Alles werkt **lokaal op je eigen wifi**, zonder cloud.
+A DIY baby monitor built on a cheap ESP32-S3 voice board (≈ €15), integrated with **Home Assistant** and paired with its own **Android app**. Everything runs **locally on your own Wi-Fi** — no cloud.
 
-> *English summary: a DIY baby monitor on a cheap "Xiaozhi" ESP32-S3 voice board running ESPHome. Live audio stream (WAV over HTTP), noise gate, push-to-talk, Home Assistant sensors, and an Android app with connection-loss alarm and Reolink camera view. Local network only. Docs are in Dutch.*
-
-> ⚠️ **Geen medisch apparaat.** Dit is een hobbyproject. Test het goed (zie [Testen](#testen)) en gebruik in het begin een gewone babyfoon als reserve.
+> ⚠️ **Not a medical device.** This is a hobby project. Test it thoroughly (see [Testing](#testing)) and keep a regular baby monitor as a backup at first.
 
 ---
 
-## Functies
+## Features
 
-### Op het bordje (ESPHome)
-| Functie | Uitleg |
+### On the board (ESPHome)
+| Feature | Description |
 |---|---|
-| **Live geluid** | De microfoon wordt live doorgestuurd: `http://IP:8080/audio.wav`. Te beluisteren in de app of in VLC. Max. 2 luisteraars tegelijk. |
-| **Geluidsniveau** | Sensor in Home Assistant (dBFS), elke seconde bijgewerkt. |
-| **Geluid gedetecteerd** | Aan/uit-sensor met instelbare **drempel** (schuifje in HA). Voor meldingen en automations. |
-| **Ruisonderdrukking** | Onder de **Ruisgrens** stuurt het bordje stilte in plaats van ruis. Boven de grens direct weer geluid. Aan/uit en grens instelbaar in HA. |
-| **Terugpraten** | Je stem uit de app komt zacht uit de speaker. Eigen schuifje **Volume terugpraten**. Tijdens het praten wordt de stream stil (geen rondzingen). |
-| **Speaker / witte ruis** | Media player in HA: speel witte ruis of een slaapliedje af. Schuifje **Volume** in HA, volgt ook de knoppen. Maximaal volume begrensd. |
-| **Knoppen** | Volume +, Volume −, en de WiFi-knop (stopt het geluid). |
-| **Diagnose** | IP-adres, wifi-signaal, uptime, firmwareversie, aantal luisteraars. |
+| **Live audio** | The microphone is streamed live at `http://<IP>:8080/audio.wav`. Listen in the app or in VLC. Up to 2 listeners at a time. |
+| **Sound level** | Home Assistant sensor (dBFS), updated every second. |
+| **Sound detected** | Binary sensor with an adjustable **threshold** (slider in HA). Use it for notifications and automations. |
+| **Noise gate** | Below the **noise threshold**, the board sends silence instead of hiss. Above it, sound passes immediately. Switch and threshold in HA. |
+| **Push-to-talk** | Your voice from the app plays softly through the speaker, with its own **talk-back volume** slider. The stream is muted while you talk (no feedback). |
+| **Speaker / white noise** | Media player in HA for white noise or lullabies. **Volume** slider in HA, kept in sync with the physical buttons. Maximum volume is capped. |
+| **Buttons** | Volume +, Volume −, and the Wi-Fi button (stops playback). |
+| **Diagnostics** | IP address, Wi-Fi signal, uptime, firmware version, number of listeners. |
 
-### Android-app
-| Functie | Uitleg |
+### Android app
+| Feature | Description |
 |---|---|
-| **Luisteren** | Live geluid, blijft werken met het scherm uit (voorgrondservice). |
-| **Volumemeter** | Zie of er geluid is, ook als het geluid uit staat. |
-| **Melding bij geluid** | Als het geluid boven de drempel komt. |
-| **Alarm bij verbindingsverlies** | Na 10 s zonder geluidsdata gaat een alarm af via het **alarmvolume**, ook als de telefoon op stil staat. |
-| **Terugpraten** | Knop ingedrukt houden om te praten. |
-| **Ruisonderdrukking + versterking** | Instelbaar in de app. |
-| **Camera's** | Twee Reolink-camera's: stilstaand beeld op het beginscherm, live beeld (RTSP) met één tik. Draaien en zoomen voor de E1 Zoom. |
+| **Listen** | Live audio, keeps working with the screen off (foreground service). |
+| **Level meter** | See whether there is sound, even with playback muted. |
+| **Sound notification** | When the level exceeds the threshold. |
+| **Connection-loss alarm** | After 10 s without audio data, an alarm plays on the **alarm volume** — even when the phone is on silent. |
+| **Push-to-talk** | Hold the button to talk. |
+| **Noise gate + gain** | Adjustable in the app. |
+| **Cameras** | Two Reolink cameras: still image on the home screen, live RTSP video with one tap. Pan/tilt/zoom for the E1 Zoom. |
 
-### Extra (optioneel)
-- **Home Assistant-automations** (`ha_automations.yaml`): meldingen bij geluid, bij offline en als de meting stil blijft staan.
-- **Babyradar** (`babyradar_*.yaml`): koppeling met een Seeed MR60BHA2 60 GHz-radar voor ademhaling en hartslag zonder contact. *Alleen informatief.*
-- **Behuizing** (`case/`): 3D-printbaar, parametrisch in OpenSCAD. Maten zijn nog geschat.
+The app's user interface is in Dutch. See [`android-app/README.md`](android-app/README.md).
 
----
-
-## Benodigdheden
-
-- **Bordje**: "Xiaozhi AI Voice Chat" ESP32-S3-module (AliExpress/eBay), opdruk `ESP32S3-AI_V2.3` of `V2.4` (`303ESP32AI2`). Met INMP441-microfoon, MAX98357A-versterker en speaker.
-- **USB-C-kabel die data kan versturen** en een goede 5V-adapter.
-- **Home Assistant** met de **ESPHome**-add-on (ESPHome 2026.5 of nieuwer).
-- **Windows**: de [CH340-driver](https://www.wch-ic.com/downloads/CH341SER_EXE.html).
-- Voor de app: **Android Studio** en een Android-telefoon (Android 10 of nieuwer).
+### Extras
+- **Home Assistant automations** (`ha_automations.yaml`): notifications for sound, for the device going offline, and for a frozen measurement.
+- **Enclosure** (`case/`): 3D-printable, parametric OpenSCAD design. Dimensions are still estimates — measure your board first.
 
 ---
 
-## Installeren
+## What you need
 
-### 1. Het bordje (ESPHome)
+- **Board**: "Xiaozhi AI Voice Chat" ESP32-S3 module (AliExpress/eBay), PCB marked `ESP32S3-AI_V2.3` or `V2.4` (`303ESP32AI2`). It has an INMP441 microphone, a MAX98357A amplifier, and comes with a speaker.
+- **A USB-C cable that carries data**, and a decent 5 V power supply.
+- **Home Assistant** with the **ESPHome** add-on (ESPHome 2026.5 or newer).
+- **Windows**: the [CH340 driver](https://www.wch-ic.com/downloads/CH341SER_EXE.html).
+- For the app: **Android Studio** and an Android phone (Android 10 or newer).
 
-1. **Kopieer het streamonderdeel naar Home Assistant.**
-   Zet de map `components/audio_stream/` in `/config/esphome/components/audio_stream/`. Dat kan bijvoorbeeld via de *Samba share*-add-on: `\\homeassistant.local\config\esphome\`.
+---
+
+## Installation
+
+### 1. The board (ESPHome)
+
+1. **Copy the stream component to Home Assistant.** Put the `components/audio_stream/` folder in `/config/esphome/components/audio_stream/`, for example via the *Samba share* add-on (`\\homeassistant.local\config\esphome\`):
    ```
    config/esphome/
    ├── secrets.yaml
@@ -65,71 +63,67 @@ Een zelfgebouwde babyfoon op een goedkoop ESP32-S3-bordje (± €15), gekoppeld 
        ├── audio_stream.cpp
        └── audio_stream.h
    ```
-2. **Vul je secrets in.**
-   Zet de regels uit `secrets.yaml.voorbeeld` in je eigen `secrets.yaml`. Een API-sleutel krijg je als je in ESPHome een nieuw apparaat maakt.
-3. **Maak het apparaat aan.**
-   ESPHome → *New device* → kies *Edit* → plak de inhoud van `babyfoon.yaml`.
-4. **Flash de eerste keer via USB.**
-   *Install → Manual download → Factory format*. Open daarna [web.esphome.io](https://web.esphome.io) in Chrome of Edge → *Connect* → *Install* → kies het bestand. Latere updates gaan draadloos.
-5. **Controleer de logs.**
-   Je moet `Stream beschikbaar op ...:8080/audio.wav` zien, en het *Geluidsniveau* moet omhoog gaan als je in je handen klapt.
-6. **Geef het bordje een vast IP-adres** in je router.
-7. **Test met VLC.**
-   *Media → Netwerkstream openen* → `http://IP-VAN-BORDJE:8080/audio.wav`. Zet onder *Meer opties* de *Caching* op 150 ms voor weinig vertraging.
+2. **Fill in your secrets.** Add the lines from `secrets.yaml.example` to your own `secrets.yaml`. You get an API key when you create a new device in ESPHome.
+3. **Create the device.** ESPHome → *New device* → *Edit* → paste the contents of `babyfoon.yaml`.
+4. **First flash over USB.** *Install → Manual download → Factory format*, then open [web.esphome.io](https://web.esphome.io) in Chrome or Edge → *Connect* → *Install* → select the file. Later updates go over the air.
+5. **Check the logs.** You should see `Stream beschikbaar op ...:8080/audio.wav`, and the sound level should rise when you clap.
+6. **Give the board a fixed IP address** in your router.
+7. **Test with VLC.** *Media → Open Network Stream* → `http://<BOARD-IP>:8080/audio.wav`. Under *Show more options*, set *Caching* to 150 ms for low latency.
 
-### 2. Instellen in Home Assistant
+### 2. Home Assistant settings
 
-- **Geluid drempel**: meet het niveau als het stil is (bijv. −45 dB) en zet de drempel ongeveer **10 dB hoger** (−35).
-- **Ruisgrens**: net boven het stille niveau (bijv. −40).
-- **Automations**: neem ze over uit `ha_automations.yaml` en vervang `notify.mobile_app_JOUW_TELEFOON`.
+- **Geluid drempel** (sound threshold): measure the level when the room is quiet (e.g. −45 dB) and set the threshold about **10 dB higher** (−35).
+- **Ruisgrens** (noise threshold): just above the quiet level (e.g. −40).
+- **Automations**: copy them from `ha_automations.yaml` and replace `notify.mobile_app_JOUW_TELEFOON` with your phone's notify service.
 
-### 3. De Android-app
+### 3. The Android app
 
-1. Installeer [Android Studio](https://developer.android.com/studio) en open de map `android-app`.
-2. Zet op je telefoon **USB-foutopsporing** aan: *Over de telefoon* → 7× tikken op *Buildnummer* → *Ontwikkelaarsopties*.
-3. Sluit je telefoon aan en klik op **▶ Run**.
-4. Vul in de app (tandwiel) het IP-adres van het bordje in en druk op *Test babyfoon*.
-5. Druk op **Batterijbesparing uitzetten**. Zet de app bij Samsung, Xiaomi en OnePlus ook op *Onbeperkt*.
+1. Install [Android Studio](https://developer.android.com/studio) and open the `android-app` folder.
+2. Enable **USB debugging** on your phone (*About phone* → tap *Build number* 7 times → *Developer options*).
+3. Connect the phone and click **▶ Run**.
+4. In the app (gear icon), enter the board's IP address and tap *Test babyfoon*.
+5. Tap **Batterijbesparing uitzetten** (disable battery optimization). On Samsung, Xiaomi and OnePlus, also set the app to *Unrestricted*.
 
-Zie [`android-app/LEESMIJ.md`](android-app/LEESMIJ.md) voor de camera-instellingen.
+See [`android-app/README.md`](android-app/README.md) for camera setup.
 
 ---
 
-## Testen
+## Testing
 
-Doe dit voordat je erop vertrouwt:
+Do this before you rely on it:
 
-- [ ] Praat bij het bordje: de meter in de app beweegt.
-- [ ] **Trek de stekker eruit**: binnen ± 10 s gaat het alarm af in de app.
-- [ ] Doe dezelfde test met je **telefoon op stil**: het alarm klinkt nog steeds.
-- [ ] Laat de app een nacht draaien met het scherm uit: geen onterecht alarm.
+- [ ] Talk near the board: the meter in the app moves.
+- [ ] **Unplug the board**: the app alarm sounds within about 10 s.
+- [ ] Repeat with your **phone on silent**: the alarm still sounds.
+- [ ] Run the app overnight with the screen off: no false alarms.
 
 ---
 
-## Hoe het werkt (technisch)
+## How it works
 
-- `components/audio_stream` is een eigen ESPHome-component. Het leest de microfoon via een `MicrophoneSource` (16 kHz, 16 bit mono). Elke luisteraar krijgt een eigen ringbuffer en een eigen TCP-taak.
-  - `GET /audio.wav`: oneindige WAV-stream
-  - `GET /status`: JSON met versie, sample rate en luisteraars
-  - `POST /talk`: ruwe PCM (16 bit, 16 kHz) naar de speaker, via een extra ingang op de mixer
-- Bij een trage verbinding wordt de oudste audio overschreven. De vertraging loopt dus niet op.
-- De app gebruikt `AudioTrack` (niet-blokkerend) en een waakhond die alarm geeft als er te lang geen data binnenkomt.
+- `components/audio_stream` is a custom ESPHome component. It reads the microphone through a `MicrophoneSource` (16 kHz, 16-bit mono). Each listener gets its own ring buffer and TCP task.
+  - `GET /audio.wav`: endless WAV stream
+  - `GET /status`: JSON with version, sample rate and listener count
+  - `POST /talk`: raw PCM (16-bit, 16 kHz) played on the speaker through an extra mixer input
+- On a slow connection, the oldest audio is overwritten, so latency never builds up.
+- The noise gate runs on the board (10 ms attack, 2.5 s hold, 400 ms release), so it works in any player.
+- The app uses a non-blocking `AudioTrack` and a watchdog that raises an alarm when no data arrives for too long.
 
 ## Pinout (V2.3 / V2.4)
 
-| Functie | GPIO |
+| Function | GPIO |
 |---|---|
-| Microfoon WS / SCK / SD | 4 / 5 / 6 |
-| Versterker DIN / BCLK / LRC | 7 / 15 / 16 |
-| Volume − / Volume + / WiFi-knop | 39 / 40 / 1 |
-| PIR-aansluiting | 8 |
+| Microphone WS / SCK / SD | 4 / 5 / 6 |
+| Amplifier DIN / BCLK / LRC | 7 / 15 / 16 |
+| Volume − / Volume + / Wi-Fi button | 39 / 40 / 1 |
+| PIR header | 8 |
 
-Pinout met dank aan [immortalbob/303ESP32S3-AI-ESPHome](https://github.com/immortalbob/303ESP32S3-AI-ESPHome).
+Pinout thanks to [immortalbob/303ESP32S3-AI-ESPHome](https://github.com/immortalbob/303ESP32S3-AI-ESPHome).
 
-## Versies
+## Versions
 
-Zie [`VERSIES.md`](VERSIES.md). De versie zie je ook in Home Assistant (*Firmware*), op `/status` en onderaan in de app-instellingen.
+See [`CHANGELOG.md`](CHANGELOG.md). The version is also shown in Home Assistant (*Firmware*), on `/status`, and at the bottom of the app settings.
 
-## Licentie
+## License
 
 [MIT](LICENSE)
