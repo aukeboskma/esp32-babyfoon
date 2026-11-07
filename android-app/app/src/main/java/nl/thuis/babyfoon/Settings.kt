@@ -13,8 +13,22 @@ data class BabyfoonConfig(
     val name: String,
     val host: String,
     val port: Int = 8080,
+    /** Toegangssleutel van het bordje (leeg = geen sleutel). */
+    val accessKey: String = "",
 ) {
     val configured: Boolean get() = host.isNotBlank()
+}
+
+/** Naam van de HTTP-header waarin de app de sleutel meestuurt. */
+const val KEY_HEADER = "X-Babyfoon-Key"
+
+/** Leesbare tekst bij een foutcode van het bordje. */
+fun boardHttpError(code: Int): String = when (code) {
+    401 -> "Toegangssleutel klopt niet (zie Instellingen)"
+    429 -> "Te veel foute sleutels: dit toestel is tijdelijk geblokkeerd"
+    503 -> "Te veel luisteraars op deze babyfoon"
+    404 -> "Functie niet beschikbaar (firmware bijwerken?)"
+    else -> "Babyfoon antwoordt met $code"
 }
 
 data class CameraConfig(
@@ -53,7 +67,8 @@ class Settings(context: Context) {
             val arr = JSONArray()
             list.forEach {
                 arr.put(JSONObject().put("id", it.id).put("name", it.name.trim())
-                    .put("host", it.host.trim()).put("port", it.port))
+                    .put("host", it.host.trim()).put("port", it.port)
+                    .put("key", it.accessKey.trim()))
             }
             prefs.edit().putString("babyfoons_json", arr.toString()).apply()
         }
@@ -132,6 +147,7 @@ class Settings(context: Context) {
                     name = o.optString("name"),
                     host = o.optString("host"),
                     port = o.optInt("port", 8080),
+                    accessKey = o.optString("key"),
                 )
             }
         } catch (e: Exception) {

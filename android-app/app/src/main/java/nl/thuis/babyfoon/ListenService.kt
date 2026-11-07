@@ -255,12 +255,10 @@ class ListenService : Service() {
                 conn.connectTimeout = 4000
                 conn.readTimeout = 4000
                 conn.useCaches = false
+                if (cfg.accessKey.isNotBlank()) conn.setRequestProperty(KEY_HEADER, cfg.accessKey.trim())
                 st.connection = conn
                 if (conn.responseCode != 200) {
-                    throw IllegalStateException(
-                        if (conn.responseCode == 503) "Te veel luisteraars op deze babyfoon"
-                        else "Babyfoon antwoordt met ${conn.responseCode}"
-                    )
+                    throw IllegalStateException(boardHttpError(conn.responseCode))
                 }
                 val input = BufferedInputStream(conn.inputStream, 8192)
 

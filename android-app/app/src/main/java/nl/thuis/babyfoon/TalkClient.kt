@@ -42,10 +42,20 @@ object TalkClient {
                 s.connect(InetSocketAddress(target.host, target.port), 3000)
                 s.tcpNoDelay = true
                 val out = s.getOutputStream()
+                val keyLine = if (target.accessKey.isNotBlank()) "$KEY_HEADER: ${target.accessKey.trim()}\r\n" else ""
                 out.write(
-                    ("POST /talk HTTP/1.0\r\nHost: ${target.host}\r\n" +
+                    ("POST /talk HTTP/1.0\r\nHost: ${target.host}\r\n" + keyLine +
                         "Content-Type: audio/L16;rate=$RATE;channels=1\r\n\r\n").toByteArray()
                 )
+                // Kort wachten op een weigering (foute sleutel); bij succes stuurt het bordje "200 OK"
+                s.soTimeout = 1500
+                val head = ByteArray(64)
+                val n0 = try { s.getInputStream().read(head) } catch (e: java.net.SocketTimeoutException) { 0 }
+                if (n0 > 0) {
+                    val line = String(head, 0, n0, Charsets.US_ASCII)
+                    val code = Regex("HTTP/1\\.\\d (\\d{3})").find(line)?.groupValues?.get(1)?.toIntOrNull() ?: 200
+                    if (code != 200) throw IllegalStateException(boardHttpError(code))
+                }
 
                 val minBuf = AudioRecord.getMinBufferSize(
                     RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT

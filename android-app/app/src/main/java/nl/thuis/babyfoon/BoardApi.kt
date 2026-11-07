@@ -24,6 +24,7 @@ object BoardApi {
         conn.connectTimeout = timeoutMs
         conn.readTimeout = timeoutMs
         conn.useCaches = false
+        if (cfg.accessKey.isNotBlank()) conn.setRequestProperty(KEY_HEADER, cfg.accessKey.trim())
         try {
             val code = conn.responseCode
             val text = (if (code < 400) conn.inputStream else conn.errorStream)
@@ -31,6 +32,19 @@ object BoardApi {
             return code to text
         } finally {
             conn.disconnect()
+        }
+    }
+
+    /** Test voor het instellingenscherm. */
+    suspend fun test(cfg: BabyfoonConfig): String = withContext(Dispatchers.IO) {
+        if (cfg.host.isBlank()) return@withContext "Vul eerst het IP-adres in"
+        try {
+            val (code, text) = get(cfg, "/status")
+            if (code != 200) return@withContext boardHttpError(code)
+            val v = try { JSONObject(text).optString("version") } catch (e: Exception) { "" }
+            if (v.isNotBlank()) "Werkt! (firmware $v)" else "Werkt!"
+        } catch (e: Exception) {
+            "Niet bereikbaar"
         }
     }
 
@@ -72,15 +86,19 @@ object BoardApi {
      */
     suspend fun tune(cfg: BabyfoonConfig): String {
         Monitor.updateBaby(cfg.id) { it.copy(tuneMessage = "Ruis meten… 10 seconden stil zijn") }
-        val ok = withContext(Dispatchers.IO) {
+        val code = withContext(Dispatchers.IO) {
             try {
-                get(cfg, "/tune").first == 200
+                get(cfg, "/tune").first
             } catch (e: Exception) {
-                false
+                -1
             }
         }
-        if (!ok) {
-            val msg = "Inmeten lukt niet (firmware 2.1 of nieuwer nodig)"
+        if (code != 200) {
+            val msg = when (code) {
+                -1 -> "Inmeten lukt niet: babyfoon niet bereikbaar"
+                404 -> "Inmeten lukt niet (firmware 2.1 of nieuwer nodig)"
+                else -> "Inmeten lukt niet: " + boardHttpError(code)
+            }
             Monitor.updateBaby(cfg.id) { it.copy(tuneMessage = msg) }
             return msg
         }

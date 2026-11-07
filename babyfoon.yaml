@@ -15,7 +15,7 @@
 #
 #  Nodig: ESPHome 2025.5 of nieuwer (voor sound_level)
 #
-#  VERSIE 2.2.0  (zie ook "Firmwareversie" in Home Assistant)
+#  VERSIE 2.3.0  (zie ook "Firmwareversie" in Home Assistant)
 #   1.0.0  eerste versie: geluidsniveau, stream, knoppen
 #   1.1.0  ruisonderdrukking op de stream
 #   1.2.0  terugpraten vanuit de app
@@ -23,10 +23,11 @@
 #   1.4.0  app wordt automatisch gebouwd door GitHub (geen wijziging op het bordje)
 #   2.1.0  'Ruis inmeten': stelt Ruisgrens en Geluid drempel zelf in
 #   2.2.0  bromfilter op de stream (haalt 50 Hz netbrom en lage dreun weg)
+#   2.3.0  toegangssleutel op de stream (luisteren, praten, inmeten) + blokkade bij raden
 # =====================================================================
 
 substitutions:
-  versie: "2.2.0"
+  versie: "2.3.0"
   name: babyfoon
   friendly_name: Babyfoon
 
@@ -212,6 +213,10 @@ audio_stream:
     gain_factor: 1        # niet versterken: de app versterkt zelf, en zo zijn
                           # de dB-waarden in de app gelijk aan die in Home Assistant
   port: 8080
+  # Toegangssleutel: zonder deze sleutel kan niemand luisteren, praten of
+  # inmeten. Minstens 24 tekens (letters, cijfers, - en _). Zelfde sleutel
+  # vul je in de app in. Na 5 foute pogingen wordt dat IP geblokkeerd.
+  access_key: !secret babyfoon_stream_key
   max_clients: 2          # bijvoorbeeld twee telefoons
   buffer_duration: 500ms
   # Bromfilter: alles onder deze frequentie wordt weggefilterd (50 Hz netbrom,

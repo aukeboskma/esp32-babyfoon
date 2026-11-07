@@ -16,13 +16,14 @@
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace esphome::audio_stream {
 
 class TuneTrigger : public Trigger<> {};
 
-static const char *const AUDIO_STREAM_VERSION = "2.2.0";
+static const char *const AUDIO_STREAM_VERSION = "2.3.0";
 static const uint8_t MAX_SLOTS = 4;
 
 struct ClientSlot {
@@ -52,6 +53,9 @@ class AudioStreamComponent : public Component {
   void set_talk_speaker(speaker::Speaker *spk) { this->talk_speaker_ = spk; }
   void set_talk_volume(float v) { this->talk_volume_ = v; }
 
+  /// Toegangssleutel: zonder de juiste sleutel weigert de stream alles.
+  void set_access_key(const std::string &key) { this->access_key_ = key; }
+
   /// Brom-filter: hoogdoorlaatfilter (0 = uit). Haalt 50 Hz netbrom en lage dreun weg.
   void set_high_pass(float hz) { this->high_pass_hz_ = hz; }
 
@@ -70,6 +74,10 @@ class AudioStreamComponent : public Component {
   int claim_slot_(int sock);
   void release_slot_(uint8_t slot);
   void apply_gate_(const std::vector<uint8_t> &in, std::vector<uint8_t> &out);
+  bool check_access_(int sock, const char *req, size_t len);
+  uint32_t lockout_remaining_s_(uint32_t ip);
+  void register_failure_(uint32_t ip);
+  void register_success_(uint32_t ip);
   void apply_high_pass_(const std::vector<uint8_t> &in, std::vector<uint8_t> &out);
   void setup_high_pass_();
   void handle_talk_(int sock, const char *leftover, size_t leftover_len);
@@ -96,6 +104,18 @@ class AudioStreamComponent : public Component {
   std::vector<uint8_t> gated_;
 
   std::atomic<float> sound_threshold_db_{NAN};
+
+  // Toegangssleutel en bescherming tegen raden (per IP-adres)
+  std::string access_key_;
+  struct FailEntry {
+    uint32_t ip{0};
+    uint8_t fails{0};
+    uint8_t lock_level{0};
+    uint32_t last_fail_ms{0};
+    uint32_t locked_until_ms{0};
+  };
+  FailEntry fail_table_[8];
+  std::mutex fail_mutex_;
 
   // Hoogdoorlaatfilter: twee Butterworth-biquads achter elkaar (4e orde, 24 dB/octaaf)
   float high_pass_hz_{0.0f};

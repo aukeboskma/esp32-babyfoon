@@ -232,10 +232,16 @@ private fun BabyfoonFields(b: BabyfoonConfig, onChange: (BabyfoonConfig) -> Unit
         label = { Text("Poort (standaard 8080)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
     )
+    OutlinedTextField(
+        value = b.accessKey, onValueChange = { onChange(b.copy(accessKey = it.trim())) },
+        label = { Text("Toegangssleutel (uit secrets.yaml)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+    )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedButton(onClick = {
             result = "Bezig…"
-            scope.launch { result = testBabyfoon(b.host, b.port) }
+            scope.launch { result = nl.thuis.babyfoon.BoardApi.test(b) }
         }) { Text("Test babyfoon") }
         Text(result, style = MaterialTheme.typography.bodySmall)
     }

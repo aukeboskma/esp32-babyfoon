@@ -179,10 +179,11 @@ void AudioStreamComponent::dump_config() {
                 "  Sample rate: %u Hz, 16 bit mono\n"
                 "  Buffer: %u ms\n"
                 "  Ruisonderdrukking: %s (grens %.0f dB)\n"
-                "  Bromfilter: %.0f Hz",
+                "  Bromfilter: %.0f Hz\n"
+                "  Toegangssleutel: %s",
                 AUDIO_STREAM_VERSION, this->port_, this->max_clients_, (unsigned) this->sample_rate_,
                 (unsigned) this->buffer_ms_, this->gate_enabled_.load() ? "aan" : "uit", this->gate_threshold_db_.load(),
-                this->high_pass_hz_);
+                this->high_pass_hz_, this->access_key_.empty() ? "UIT (iedereen op je netwerk kan luisteren)" : "aan");
 }
 
 // ---------------------------------------------------------------------
@@ -307,6 +308,152 @@ void AudioStreamComponent::client_task_(void *param) {
   vTaskDelete(nullptr);
 }
 
+// ---------------------------------------------------------------------
+//  Toegangssleutel + bescherming tegen raden
+//   - sleutel in header "X-Babyfoon-Key: ..." of in de URL "?key=..."
+//   - vergelijken in constante tijd (geen informatie via timing)
+//   - elke foute poging: 1 s wachten
+//   - 5 fouten binnen 10 min vanaf hetzelfde IP: geblokkeerd voor 1 min,
+//     daarna 2, 4, 8 ... tot max 60 min
+// ---------------------------------------------------------------------
+static bool ci_starts_with(const char *s, const char *prefix) {
+  for (; *prefix; s++, prefix++) {
+    if (*s == '\0' || tolower((unsigned char) *s) != tolower((unsigned char) *prefix))
+      return false;
+  }
+  return true;
+}
+
+static std::string extract_key(const char *req) {
+  const char *end_headers = strstr(req, "\r\n\r\n");
+  // 1) Header X-Babyfoon-Key
+  for (const char *line = strstr(req, "\r\n"); line != nullptr && (end_headers == nullptr || line < end_headers);
+       line = strstr(line + 2, "\r\n")) {
+    const char *h = line + 2;
+    if (ci_starts_with(h, "X-Babyfoon-Key:")) {
+      h += 15;
+      while (*h == ' ')
+        h++;
+      std::string v;
+      while (*h && *h != '\r' && *h != '\n' && v.size() < 128)
+        v += *h++;
+      return v;
+    }
+  }
+  // 2) ?key=... of &key=... in de eerste regel (handig voor VLC)
+  const char *line_end = strstr(req, "\r\n");
+  for (const char *p = req; *p && (line_end == nullptr || p < line_end); p++) {
+    if ((*p == '?' || *p == '&') && strncmp(p + 1, "key=", 4) == 0) {
+      p += 5;
+      std::string v;
+      while (*p && *p != '&' && *p != ' ' && *p != '\r' && v.size() < 128)
+        v += *p++;
+      return v;
+    }
+  }
+  return "";
+}
+
+static bool constant_time_equal(const std::string &a, const std::string &b) {
+  size_t n = std::max(a.size(), b.size());
+  uint8_t diff = (uint8_t) (a.size() != b.size());
+  for (size_t i = 0; i < n; i++) {
+    uint8_t x = i < a.size() ? (uint8_t) a[i] : 0;
+    uint8_t y = i < b.size() ? (uint8_t) b[i] : 0;
+    diff |= x ^ y;
+  }
+  return diff == 0;
+}
+
+uint32_t AudioStreamComponent::lockout_remaining_s_(uint32_t ip) {
+  std::lock_guard<std::mutex> lock(this->fail_mutex_);
+  uint32_t now = millis();
+  for (auto &e : this->fail_table_) {
+    if (e.ip == ip && (int32_t) (e.locked_until_ms - now) > 0)
+      return (e.locked_until_ms - now) / 1000 + 1;
+  }
+  return 0;
+}
+
+void AudioStreamComponent::register_failure_(uint32_t ip) {
+  std::lock_guard<std::mutex> lock(this->fail_mutex_);
+  uint32_t now = millis();
+  FailEntry *e = nullptr;
+  FailEntry *oldest = &this->fail_table_[0];
+  for (auto &x : this->fail_table_) {
+    if (x.ip == ip) {
+      e = &x;
+      break;
+    }
+    if (x.last_fail_ms < oldest->last_fail_ms)
+      oldest = &x;
+  }
+  if (e == nullptr) {
+    e = oldest;
+    *e = FailEntry{};
+    e->ip = ip;
+  }
+  if (now - e->last_fail_ms > 10u * 60u * 1000u)
+    e->fails = 0;
+  e->last_fail_ms = now;
+  e->fails++;
+  if (e->fails >= 5) {
+    uint32_t minutes = std::min<uint32_t>(60, 1u << std::min<uint8_t>(e->lock_level, 6));
+    e->locked_until_ms = now + minutes * 60u * 1000u;
+    if (e->lock_level < 10)
+      e->lock_level++;
+    e->fails = 0;
+    ESP_LOGW(TAG, "IP %u.%u.%u.%u geblokkeerd voor %u min (te veel foute sleutels)", ip & 0xFF, (ip >> 8) & 0xFF,
+             (ip >> 16) & 0xFF, ip >> 24, (unsigned) minutes);
+  }
+}
+
+void AudioStreamComponent::register_success_(uint32_t ip) {
+  std::lock_guard<std::mutex> lock(this->fail_mutex_);
+  for (auto &e : this->fail_table_) {
+    if (e.ip == ip) {
+      e.fails = 0;
+      e.lock_level = 0;
+    }
+  }
+}
+
+bool AudioStreamComponent::check_access_(int sock, const char *req, size_t len) {
+  if (this->access_key_.empty())
+    return true;  // geen sleutel ingesteld: open (zoals versie 2.2 en ouder)
+
+  struct sockaddr_in peer {};
+  socklen_t plen = sizeof(peer);
+  uint32_t ip = 0;
+  if (getpeername(sock, (struct sockaddr *) &peer, &plen) == 0)
+    ip = peer.sin_addr.s_addr;
+
+  uint32_t wait = this->lockout_remaining_s_(ip);
+  if (wait > 0) {
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "HTTP/1.0 429 Too Many Requests\r\nRetry-After: %u\r\nConnection: close\r\n\r\n"
+             "Te veel foute pogingen. Probeer over %u seconden opnieuw.\n",
+             (unsigned) wait, (unsigned) wait);
+    send_all(sock, msg, strlen(msg));
+    return false;
+  }
+
+  if (constant_time_equal(extract_key(req), this->access_key_)) {
+    this->register_success_(ip);
+    return true;
+  }
+
+  this->register_failure_(ip);
+  vTaskDelay(pdMS_TO_TICKS(1000));  // raden vertragen
+  static const char denied[] =
+      "HTTP/1.0 401 Unauthorized\r\nConnection: close\r\n\r\nSleutel ontbreekt of klopt niet\n";
+  send_all(sock, denied, sizeof(denied) - 1);
+  ESP_LOGW(TAG, "Geweigerd: foute of geen sleutel van %u.%u.%u.%u", ip & 0xFF, (ip >> 8) & 0xFF, (ip >> 16) & 0xFF,
+           ip >> 24);
+  return false;
+}
+
 void AudioStreamComponent::handle_client_(uint8_t slot) {
   int sock;
   std::shared_ptr<ring_buffer::RingBuffer> rb;
@@ -337,6 +484,13 @@ void AudioStreamComponent::handle_client_(uint8_t slot) {
       break;
   }
   req[got] = '\0';
+
+  if (!this->check_access_(sock, req, got)) {
+    shutdown(sock, SHUT_RDWR);
+    close(sock);
+    this->release_slot_(slot);
+    return;
+  }
 
   bool is_talk = strncmp(req, "POST /talk", 10) == 0;
   bool is_status = strncmp(req, "GET /status", 11) == 0;

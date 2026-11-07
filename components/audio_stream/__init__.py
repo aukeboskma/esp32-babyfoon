@@ -1,4 +1,4 @@
-"""audio_stream v2.2.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
+"""audio_stream v2.3.0: microfoon als live WAV-stream via HTTP (lokaal netwerk).
 
 Gebruik:
     audio_stream:
@@ -13,6 +13,8 @@ Gebruik:
 Stream:  http://<ip>:8080/audio.wav   (16 bit mono PCM, sample rate van de mic)
 Status:  http://<ip>:8080/status      (JSON)
 """
+
+import re
 
 from esphome import automation
 import esphome.codegen as cg
@@ -33,12 +35,19 @@ CONF_HOLD = "hold"
 CONF_TALK = "talk"
 CONF_ON_TUNE = "on_tune"
 CONF_HIGH_PASS = "high_pass"
+CONF_ACCESS_KEY = "access_key"
 CONF_SPEAKER = "speaker"
 CONF_VOLUME = "volume"
 
 audio_stream_ns = cg.esphome_ns.namespace("audio_stream")
 AudioStreamComponent = audio_stream_ns.class_("AudioStreamComponent", cg.Component)
 TuneTrigger = audio_stream_ns.class_("TuneTrigger", automation.Trigger.template())
+
+def _validate_key_chars(value):
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise cv.Invalid("access_key: alleen letters, cijfers, - en _ gebruiken")
+    return value
+
 
 def _consume_sockets(config):
     """Reserveer sockets: 1 luistersocket + 1 per luisteraar."""
@@ -83,6 +92,12 @@ CONFIG_SCHEMA = cv.All(
                     cv.Optional(CONF_VOLUME, default=0.5): cv.percentage,
                 }
             ),
+            # Toegangssleutel: minstens 24 tekens, alleen letters, cijfers, - en _
+            cv.Optional(CONF_ACCESS_KEY): cv.All(
+                cv.string_strict,
+                cv.Length(min=24, max=128),
+                _validate_key_chars,
+            ),
             # Bromfilter: hoogdoorlaatfilter in Hz (0 = uit)
             cv.Optional(CONF_HIGH_PASS, default="150Hz"): cv.Any(
                 cv.All(cv.frequency, cv.Range(min=0, max=1000)), cv.one_of(0)
@@ -124,6 +139,8 @@ async def to_code(config):
     cg.add(var.set_buffer_duration(config[CONF_BUFFER_DURATION]))
 
     cg.add(var.set_high_pass(float(config[CONF_HIGH_PASS])))
+    if CONF_ACCESS_KEY in config:
+        cg.add(var.set_access_key(config[CONF_ACCESS_KEY]))
 
     gate = config[CONF_NOISE_GATE]
     cg.add(var.set_gate_enabled(gate["enabled"]))
