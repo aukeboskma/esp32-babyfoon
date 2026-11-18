@@ -43,6 +43,8 @@ esp32:
   flash_size: 16MB
   framework:
     type: esp-idf
+    # De ESP32-S31 wordt pas vanaf ESP-IDF 6.1 ondersteund
+    version: 6.1.1
 
 psram:
   mode: octal
