@@ -1,0 +1,54 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "components/**"
+      - "babyfoon.yaml"
+      - "babyfoonouder.yaml"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [babyfoon.yaml, babyfoonouder.yaml]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ESPHome (2026.11 or newer, needed for ESP32-S31 audio)
+        run: pip install --pre "esphome>=2026.11.0b7"
+
+      - name: Cache PlatformIO / ESP-IDF
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.esphome
+          key: esphome-${{ matrix.config }}-${{ hashFiles('babyfoon*.yaml') }}
+          restore-keys: esphome-${{ matrix.config }}-
+
+      - name: Dummy secrets (only for the test build)
+        run: |
+          cat > secrets.yaml <<EOS
+          api_key_babyfoon_ouder: "$(openssl rand -base64 32)"
+          babyfoon_api_key: "$(openssl rand -base64 32)"
+          babyfoon_stream_key: "$(openssl rand -hex 24)"
+          stream_key_baby1: "$(openssl rand -hex 24)"
+          stream_key_baby2: "$(openssl rand -hex 24)"
+          ota_password: "test-only"
+          wifi_ssid: "test"
+          wifi_password: "test-only-password"
+          ap_password: "test-only-password"
+          EOS
+
+      - name: Compile ${{ matrix.config }}
+        run: esphome compile ${{ matrix.config }}

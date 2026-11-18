@@ -1,0 +1,664 @@
+# =====================================================================
+#  Babyfoon OUDERUNIT - ESP-Mosaico (ESP32-S31, V1.2)
+#
+#  Wat dit doet:
+#   - Luistert naar twee babyfoons tegelijk (zelfde stream als de app)
+#   - Touchscherm: per babyfoon status, volumemeter, dempen, terugpraten
+#   - ALARM (geluid + trillen + rood scherm) als een babyfoon wegvalt
+#   - Volume, scherm en batterij ook in Home Assistant
+#
+#  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
+#
+#  VERSIE 1.0.0
+#   1.0.0  eerste versie ouderunit
+# =====================================================================
+
+substitutions:
+  versie: "1.0.0"
+  name: babyfoonouder
+  friendly_name: Babyfoon ouderunit
+  # IP-adressen van de babyfoons (vast IP in je router!)
+  baby1_naam: "Kamer 1"
+  baby1_ip: "192.168.1.50"     # <-- IP van babyfoon 1
+  baby2_naam: "Kamer 2"
+  baby2_ip: "192.168.1.51"     # <-- IP van babyfoon 2
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.11.0
+  project:
+    name: "thuis.babyfoon-ouder"
+    version: "${versie}"
+  on_boot:
+    priority: 600
+    then:
+      - switch.turn_on: versterker
+      - light.turn_on:
+          id: scherm_licht
+          brightness: 70%
+
+esp32:
+  variant: esp32s31
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 200MHz
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_key_babyfoon_ouder
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  ap:
+    ssid: "Babyfoon Ouder Fallback"
+    password: !secret ap_password
+
+captive_portal:
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [babyfoon_receiver]
+
+# ---------------------------------------------------------------------
+#  Hardware ESP-Mosaico V1.2
+# ---------------------------------------------------------------------
+i2c:
+  - id: i2c_main
+    sda: GPIO56
+    scl: GPIO3
+    frequency: 400kHz
+
+spi:
+  - id: lcd_qspi
+    type: quad
+    clk_pin: GPIO42
+    data_pins: [GPIO36, GPIO51, GPIO35, GPIO9]
+
+display:
+  - platform: mipi_spi
+    id: scherm
+    model: CO5300
+    cs_pin: GPIO50
+    reset_pin: GPIO44
+    auto_clear_enabled: false
+    update_interval: never
+
+# Helderheid van het AMOLED-scherm (ook vanuit HA)
+light:
+  - platform: mipi_spi
+    id: scherm_licht
+    display_id: scherm
+    name: "Scherm"
+    restore_mode: ALWAYS_ON
+
+touchscreen:
+  - platform: cst9220
+    id: touch
+    i2c_id: i2c_main
+    interrupt_pin: GPIO6
+    on_touch:
+      # Scherm aan bij aanraken
+      - light.turn_on:
+          id: scherm_licht
+          brightness: 70%
+
+# --- Geluid: ES8311 codec + NS4150B versterker ---
+i2s_audio:
+  - id: i2s_bus
+    i2s_lrclk_pin: GPIO49
+    i2s_bclk_pin: GPIO37
+    i2s_mclk_pin: GPIO54
+
+audio_dac:
+  - platform: es8311
+    id: codec
+    i2c_id: i2c_main
+    use_microphone: true
+    mic_gain: 36DB
+    sample_rate: 16000
+    bits_per_sample: 16bit
+
+speaker:
+  - platform: i2s_audio
+    id: spk_hw
+    i2s_audio_id: i2s_bus
+    i2s_dout_pin: GPIO40
+    dac_type: external
+    audio_dac: codec
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: mono
+
+  - platform: mixer
+    id: spk_mixer
+    output_speaker: spk_hw
+    num_channels: 1
+    source_speakers:
+      - id: rx_in       # babyfoons
+      - id: alarm_in    # alarmgeluid
+
+microphone:
+  - platform: i2s_audio
+    id: mic
+    i2s_audio_id: i2s_bus
+    i2s_din_pin: GPIO52
+    adc_type: external
+    pdm: false
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+
+rtttl:
+  id: alarm_toon
+  speaker: alarm_in
+
+switch:
+  # Versterker (PA) aan/uit
+  - platform: gpio
+    id: versterker
+    pin: GPIO45
+    restore_mode: ALWAYS_ON
+    internal: true
+  # Trilmotor
+  - platform: gpio
+    id: trilmotor
+    pin: GPIO8
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+# ---------------------------------------------------------------------
+#  De babyfoons
+# ---------------------------------------------------------------------
+babyfoon_receiver:
+  id: ontvanger
+  speaker: rx_in
+  microphone:
+    microphone: mic
+  alarm_after: 10s
+  gain: 4
+  sources:
+    - name: "${baby1_naam}"
+      host: ${baby1_ip}
+      access_key: !secret stream_key_baby1
+      level:
+        id: baby1_niveau
+        name: "${baby1_naam} niveau"
+      connected:
+        id: baby1_verbonden
+        name: "${baby1_naam} verbonden"
+        on_release:
+          - script.execute: alarm_check
+        on_press:
+          - script.execute: alarm_check
+    - name: "${baby2_naam}"
+      host: ${baby2_ip}
+      access_key: !secret stream_key_baby2
+      level:
+        id: baby2_niveau
+        name: "${baby2_naam} niveau"
+      connected:
+        id: baby2_verbonden
+        name: "${baby2_naam} verbonden"
+        on_release:
+          - script.execute: alarm_check
+        on_press:
+          - script.execute: alarm_check
+
+# ---------------------------------------------------------------------
+#  Bediening en instellingen (ook in Home Assistant)
+# ---------------------------------------------------------------------
+number:
+  - platform: template
+    id: volume
+    name: "Volume"
+    icon: mdi:volume-medium
+    unit_of_measurement: "%"
+    min_value: 0
+    max_value: 100
+    step: 5
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    on_value:
+      - lambda: id(ontvanger).set_volume(x / 100.0f);
+      - lvgl.slider.update:
+          id: volume_slider
+          value: !lambda return x;
+
+  - platform: template
+    id: drempel
+    name: "Drempel geluid"
+    icon: mdi:volume-high
+    unit_of_measurement: dBFS
+    min_value: -80
+    max_value: 0
+    step: 1
+    optimistic: true
+    restore_value: true
+    initial_value: -35
+
+  - platform: template
+    id: scherm_uit_na
+    name: "Scherm dimmen na"
+    icon: mdi:timer-outline
+    unit_of_measurement: s
+    min_value: 10
+    max_value: 600
+    step: 10
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+    entity_category: config
+
+sensor:
+  - platform: bq27220
+    i2c_id: i2c_main
+    battery_level:
+      id: batterij
+      name: "Batterij"
+  - platform: wifi_signal
+    name: "WiFi signaal"
+    update_interval: 60s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: template
+    name: "Firmwareversie"
+    entity_category: diagnostic
+    lambda: return {"${versie}"};
+    update_interval: 1h
+  - platform: wifi_info
+    ip_address:
+      name: "IP-adres"
+      entity_category: diagnostic
+
+binary_sensor:
+  # AI-knop (zijkant): alarm "gezien"
+  - platform: gpio
+    id: ai_knop
+    pin:
+      number: GPIO7
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    on_press:
+      - script.execute: alarm_gezien
+      - light.turn_on:
+          id: scherm_licht
+          brightness: 70%
+
+globals:
+  - id: alarm_actief
+    type: bool
+    initial_value: "false"
+  - id: alarm_gezien_tot
+    type: uint32_t
+    initial_value: "0"
+
+button:
+  - platform: template
+    name: "Alarm gezien"
+    icon: mdi:bell-off
+    on_press:
+      - script.execute: alarm_gezien
+
+# ---------------------------------------------------------------------
+#  Alarm: geluid + trillen + rood scherm zolang een babyfoon weg is
+# ---------------------------------------------------------------------
+script:
+  - id: alarm_check
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: return !id(ontvanger).is_connected(0) || !id(ontvanger).is_connected(1);
+          then:
+            - lambda: id(alarm_actief) = true;
+            - lvgl.label.update:
+                id: alarm_tekst
+                text: !lambda |-
+                  std::string s = "Verbinding kwijt:\n";
+                  bool first = true;
+                  for (int i = 0; i < id(ontvanger).source_count(); i++) {
+                    if (!id(ontvanger).is_connected(i)) {
+                      if (!first) s += ", ";
+                      s += id(ontvanger).source_name(i);
+                      first = false;
+                    }
+                  }
+                  return s;
+            - lvgl.widget.show: alarm_scherm
+            - light.turn_on:
+                id: scherm_licht
+                brightness: 100%
+            - script.execute: alarm_geluid
+          else:
+            - lambda: |-
+                id(alarm_actief) = false;
+                id(alarm_gezien_tot) = 0;
+            - script.stop: alarm_geluid
+            - rtttl.stop:
+                id: alarm_toon
+            - switch.turn_off: trilmotor
+            - lvgl.widget.hide: alarm_scherm
+
+  - id: alarm_geluid
+    mode: single
+    then:
+      - while:
+          condition:
+            lambda: return id(alarm_actief);
+          then:
+            - if:
+                condition:
+                  lambda: return (int32_t)(millis() - id(alarm_gezien_tot)) >= 0;
+                then:
+                  - rtttl.play:
+                      id: alarm_toon
+                      rtttl: "alarm:d=8,o=6,b=180:c,e,g,c7,p,c,e,g,c7"
+                  - switch.turn_on: trilmotor
+                  - delay: 600ms
+                  - switch.turn_off: trilmotor
+            - delay: 2s
+
+  - id: alarm_gezien
+    then:
+      # 5 minuten stil; daarna opnieuw als hij nog weg is
+      - lambda: id(alarm_gezien_tot) = millis() + 5 * 60 * 1000;
+      - rtttl.stop:
+          id: alarm_toon
+      - switch.turn_off: trilmotor
+      - lvgl.label.update:
+          id: alarm_knop_tekst
+          text: "Gezien (5 min stil)"
+
+# ---------------------------------------------------------------------
+#  Scherm (480 x 480)
+# ---------------------------------------------------------------------
+lvgl:
+  displays: [scherm]
+  touchscreens: [touch]
+  buffer_size: 25%
+  theme:
+    obj:
+      bg_color: 0x101418
+      text_color: 0xE8EEF4
+      border_width: 0
+  style_definitions:
+    - id: kaart
+      bg_color: 0x161C22
+      bg_opa: COVER
+      radius: 18
+      pad_all: 14
+      border_width: 2
+      border_color: 0x161C22
+  # Na een tijdje niet aanraken: scherm zacht (AMOLED, 's nachts)
+  on_idle:
+    timeout: !lambda return (uint32_t) id(scherm_uit_na).state * 1000;
+    then:
+      - if:
+          condition:
+            lambda: return !id(alarm_actief);
+          then:
+            - light.turn_on:
+                id: scherm_licht
+                brightness: 8%
+  pages:
+    - id: hoofd
+      bg_color: 0x101418
+      widgets:
+        # ---------- Babyfoon 1 ----------
+        - obj:
+            id: baby1_kaart
+            styles: kaart
+            x: 12
+            y: 12
+            width: 456
+            height: 180
+            widgets:
+              - obj:
+                  id: baby1_dot
+                  x: 0
+                  y: 6
+                  width: 22
+                  height: 22
+                  radius: 11
+                  bg_color: 0xFFB454
+              - label:
+                  x: 34
+                  y: 0
+                  text: "${baby1_naam}"
+                  text_font: montserrat_36
+              - bar:
+                  id: baby1_bar
+                  x: 0
+                  y: 52
+                  width: 424
+                  height: 18
+                  min_value: 0
+                  max_value: 90
+                  value: 0
+                  indicator:
+                    bg_color: 0x8EC5FF
+              - button:
+                  id: baby1_stil
+                  x: 0
+                  y: 88
+                  width: 150
+                  height: 58
+                  checkable: true
+                  bg_color: 0x1F2730
+                  checked:
+                    bg_color: 0xFFB454
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text: "Dempen"
+                        text_font: montserrat_24
+                  on_value:
+                    - lambda: id(ontvanger).set_muted(0, x);
+              - button:
+                  id: baby1_praat
+                  x: 166
+                  y: 88
+                  width: 258
+                  height: 58
+                  bg_color: 0x1F2730
+                  pressed:
+                    bg_color: 0xF2D58A
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text: "Vasthouden: praten"
+                        text_font: montserrat_24
+                  on_press:
+                    - lambda: id(ontvanger).start_talk(0);
+                  on_release:
+                    - lambda: id(ontvanger).stop_talk();
+
+        # ---------- Babyfoon 2 ----------
+        - obj:
+            id: baby2_kaart
+            styles: kaart
+            x: 12
+            y: 204
+            width: 456
+            height: 180
+            widgets:
+              - obj:
+                  id: baby2_dot
+                  x: 0
+                  y: 6
+                  width: 22
+                  height: 22
+                  radius: 11
+                  bg_color: 0xFFB454
+              - label:
+                  x: 34
+                  y: 0
+                  text: "${baby2_naam}"
+                  text_font: montserrat_36
+              - bar:
+                  id: baby2_bar
+                  x: 0
+                  y: 52
+                  width: 424
+                  height: 18
+                  min_value: 0
+                  max_value: 90
+                  value: 0
+                  indicator:
+                    bg_color: 0x8EC5FF
+              - button:
+                  id: baby2_stil
+                  x: 0
+                  y: 88
+                  width: 150
+                  height: 58
+                  checkable: true
+                  bg_color: 0x1F2730
+                  checked:
+                    bg_color: 0xFFB454
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text: "Dempen"
+                        text_font: montserrat_24
+                  on_value:
+                    - lambda: id(ontvanger).set_muted(1, x);
+              - button:
+                  id: baby2_praat
+                  x: 166
+                  y: 88
+                  width: 258
+                  height: 58
+                  bg_color: 0x1F2730
+                  pressed:
+                    bg_color: 0xF2D58A
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text: "Vasthouden: praten"
+                        text_font: montserrat_24
+                  on_press:
+                    - lambda: id(ontvanger).start_talk(1);
+                  on_release:
+                    - lambda: id(ontvanger).stop_talk();
+
+        # ---------- Volume + batterij ----------
+        - label:
+            x: 24
+            y: 404
+            text: "Volume"
+            text_font: montserrat_24
+        - slider:
+            id: volume_slider
+            x: 120
+            y: 410
+            width: 230
+            height: 16
+            min_value: 0
+            max_value: 100
+            value: 60
+            on_release:
+              - number.set:
+                  id: volume
+                  value: !lambda return x;
+        - label:
+            id: batterij_tekst
+            x: 370
+            y: 404
+            text: "--%"
+            text_font: montserrat_24
+
+        # ---------- Alarm (verborgen tot nodig) ----------
+        - obj:
+            id: alarm_scherm
+            x: 0
+            y: 0
+            width: 480
+            height: 480
+            bg_color: 0xD62828
+            bg_opa: COVER
+            radius: 0
+            hidden: true
+            widgets:
+              - label:
+                  id: alarm_tekst
+                  align: TOP_MID
+                  y: 90
+                  text: "Verbinding kwijt"
+                  text_font: montserrat_36
+                  text_color: 0xFFFFFF
+                  text_align: CENTER
+              - button:
+                  align: BOTTOM_MID
+                  y: -70
+                  width: 360
+                  height: 90
+                  bg_color: 0x000000
+                  widgets:
+                    - label:
+                        id: alarm_knop_tekst
+                        align: CENTER
+                        text: "Gezien, alarm stil"
+                        text_font: montserrat_36
+                        text_color: 0xFFFFFF
+                  on_click:
+                    - script.execute: alarm_gezien
+
+# Scherm bijwerken: volumemeters, status en batterij
+interval:
+  - interval: 200ms
+    then:
+      - lvgl.bar.update:
+          id: baby1_bar
+          value: !lambda |-
+            if (!id(ontvanger).is_connected(0)) return 0;
+            return std::max(0.0f, id(ontvanger).level_db(0) + 90.0f);
+      - lvgl.bar.update:
+          id: baby2_bar
+          value: !lambda |-
+            if (!id(ontvanger).is_connected(1)) return 0;
+            return std::max(0.0f, id(ontvanger).level_db(1) + 90.0f);
+  - interval: 1s
+    then:
+      - lvgl.obj.update:
+          id: baby1_dot
+          bg_color: !lambda |-
+            return id(ontvanger).is_connected(0) ? lv_color_hex(0x5BD68A) : lv_color_hex(0xFF6B6B);
+      - lvgl.obj.update:
+          id: baby2_dot
+          bg_color: !lambda |-
+            return id(ontvanger).is_connected(1) ? lv_color_hex(0x5BD68A) : lv_color_hex(0xFF6B6B);
+      # Kaart oranje omlijnd bij geluid boven de drempel
+      - lvgl.obj.update:
+          id: baby1_kaart
+          border_color: !lambda |-
+            return id(ontvanger).level_db(0) > id(drempel).state ? lv_color_hex(0xF2D58A) : lv_color_hex(0x161C22);
+      - lvgl.obj.update:
+          id: baby2_kaart
+          border_color: !lambda |-
+            return id(ontvanger).level_db(1) > id(drempel).state ? lv_color_hex(0xF2D58A) : lv_color_hex(0x161C22);
+      - lvgl.label.update:
+          id: batterij_tekst
+          text: !lambda |-
+            if (isnan(id(batterij).state)) return std::string("--%");
+            return std::to_string((int) id(batterij).state) + "%";
