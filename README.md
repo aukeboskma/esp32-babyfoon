@@ -37,6 +37,18 @@ A DIY baby monitor built on a cheap ESP32-S3 voice board (≈ €15), integrated
 
 The app's user interface is in Dutch. See [`android-app/README.md`](android-app/README.md).
 
+### Parent unit (ESP-Mosaico)
+A bedside unit with a 2.16" touchscreen (`babyfoonouder.yaml`), no phone needed:
+| Feature | Description |
+|---|---|
+| **Listen** | Plays two baby monitors at once through its own speaker. |
+| **Per room** | Status dot, level meter, *Dempen* (mute) and hold-to-talk button. Card lights up when the sound threshold is exceeded. |
+| **Alarm** | When a monitor sends no audio for 10 s: alarm tone, vibration and a red screen naming the room. *Gezien* (or the side button) silences it for 5 minutes. |
+| **Home Assistant** | Volume, sound threshold, screen brightness, battery level, and per-room level/connection sensors. |
+| **Night mode** | Screen dims after 30 s without touch (adjustable); wakes on touch or alarm. |
+
+Requires **ESPHome 2026.11 or newer** (ESP32-S31 audio) and ESP-IDF 6.1.1 (set in the config). Pins are for **ESP-Mosaico V1.2**.
+
 ### Extras
 - **Home Assistant automations** (`ha_automations.yaml`): notifications for sound, for the device going offline, and for a frozen measurement.
 - **Enclosure** (`case/`): 3D-printable, parametric OpenSCAD design. Dimensions are still estimates — measure your board first.
@@ -79,7 +91,14 @@ The app's user interface is in Dutch. See [`android-app/README.md`](android-app/
 - Press **Ruis inmeten** while the room is quiet. The board sets **Ruisgrens** (noise threshold) and **Geluid drempel** (sound threshold) automatically. You can still fine-tune both sliders by hand.
 - **Automations**: copy them from `ha_automations.yaml` and replace `notify.mobile_app_JOUW_TELEFOON` with your phone's notify service.
 
-### 3. The Android app
+### 3. The parent unit (optional, ESP-Mosaico)
+
+1. Copy `components/babyfoon_receiver/` to `/config/esphome/components/` as well.
+2. Add `api_key_babyfoon_ouder`, `stream_key_baby1` and `stream_key_baby2` to `secrets.yaml` (the stream keys are the same as on the two baby monitors).
+3. In `babyfoonouder.yaml`, set the names and IP addresses under `substitutions:`.
+4. Flash over USB-C the first time (the first build downloads ESP-IDF 6.1.1 and takes a while).
+
+### 4. The Android app
 
 **Easiest: download the APK.**
 1. On your phone, open the [latest release](https://github.com/aukeboskma/esp32-babyfoon/releases/latest) and download `babyfoon-x.y.z.apk`.
