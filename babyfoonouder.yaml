@@ -9,12 +9,13 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.0
+#  VERSIE 1.0.1
+#   1.0.1  scherm- en codecvoeding (GPIO60) aan, touch na scherm-reset
 #   1.0.0  eerste versie ouderunit
 # =====================================================================
 
 substitutions:
-  versie: "1.0.0"
+  versie: "1.0.1"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -114,6 +115,8 @@ touchscreen:
     id: touch
     i2c_id: i2c_main
     interrupt_pin: GPIO6
+    # Touch deelt de reset (GPIO44) met het scherm: pas na het scherm starten
+    setup_priority: 500
     on_touch:
       # Scherm aan bij aanraken
       - light.turn_on:
@@ -130,6 +133,7 @@ i2s_audio:
 audio_dac:
   - platform: es8311
     id: codec
+    setup_priority: 550
     i2c_id: i2c_main
     use_microphone: true
     mic_gain: 36DB
@@ -171,6 +175,16 @@ rtttl:
   speaker: alarm_in
 
 switch:
+  # Voeding van scherm, codec en modules (GPIO60, actief laag).
+  # Moet als eerste aan, voor scherm, touch en codec starten.
+  - platform: gpio
+    id: scherm_voeding
+    pin:
+      number: GPIO60
+      inverted: true
+    restore_mode: ALWAYS_ON
+    setup_priority: 900
+    internal: true
   # Versterker (PA) aan/uit
   - platform: gpio
     id: versterker
