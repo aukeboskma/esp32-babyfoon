@@ -9,13 +9,14 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.1
+#  VERSIE 1.0.2
+#   1.0.2  codec op het juiste I2C-adres (0x19)
 #   1.0.1  scherm- en codecvoeding (GPIO60) aan, touch na scherm-reset
 #   1.0.0  eerste versie ouderunit
 # =====================================================================
 
 substitutions:
-  versie: "1.0.1"
+  versie: "1.0.2"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -133,6 +134,7 @@ i2s_audio:
 audio_dac:
   - platform: es8311
     id: codec
+    address: 0x19   # ES8311 zit op de Mosaico op 0x19 (niet de standaard 0x18)
     setup_priority: 550
     i2c_id: i2c_main
     use_microphone: true

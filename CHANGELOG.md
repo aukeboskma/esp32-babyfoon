@@ -7,6 +7,7 @@ Every change gets a new version number. You can see the version in:
 
 | Version | Date | Changes |
 |---|---|---|
+| parent 1.0.2 | 2026-11-26 | Parent unit: ES8311 codec is at I2C address 0x19 on the ESP-Mosaico (ESPHome default is 0x18), so audio failed to initialise. |
 | parent 1.0.1 | 2026-11-25 | Parent unit: fix black screen. Drive GPIO60 (active-low supply for display, codec and modules) low before anything else starts. Start the touch controller after the display, because they share the reset line (GPIO44). Codec starts after the supply is on. |
 | 2.4.0 | 2026-11-18 | **Parent unit** on ESP-Mosaico (ESP32-S31): listens to two baby monitors at once, touchscreen with status/level/mute/push-to-talk per room, alarm (tone + vibration + red screen) when a monitor drops out, volume/screen/battery in Home Assistant. New `babyfoon_receiver` component. Requires ESPHome 2026.11 and ESP-IDF 6.1.1. CI now compiles both firmwares. |
 | 2.3.0 | 2026-11-07 | **Access key**: the stream, push-to-talk, tune and status endpoints require a secret key (min. 24 characters, header `X-Babyfoon-Key` or `?key=`). Constant-time comparison, 1 s delay per wrong attempt, and per-IP lockout after 5 failures (1, 2, 4 … up to 60 min). App: key field per baby monitor and clear error messages. |
