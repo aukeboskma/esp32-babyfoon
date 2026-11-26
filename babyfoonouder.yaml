@@ -9,7 +9,8 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.6
+#  VERSIE 1.0.7
+#   1.0.7  schakelaar per babyfoon "bewaken" (uit = geen alarm, geen geluid)
 #   1.0.6  I2S full duplex (luidspreker en microfoon tegelijk), status bij Test geluid
 #   1.0.5  knop Test geluid, extra log voor de luidspreker
 #   1.0.4  touch probeert opnieuw bij opstarten, knop Herstart in HA
@@ -20,7 +21,7 @@
 # =====================================================================
 
 substitutions:
-  versie: "1.0.6"
+  versie: "1.0.7"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -196,6 +197,31 @@ rtttl:
   speaker: alarm_in
 
 switch:
+  # Babyfoon tijdelijk uitsluiten: uit = geen alarm en geen geluid van die kamer
+  - platform: template
+    id: bewaak1
+    name: "${baby1_naam} bewaken"
+    icon: mdi:baby-face-outline
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - lambda: id(ontvanger).set_muted(0, false);
+      - script.execute: alarm_check
+    on_turn_off:
+      - lambda: id(ontvanger).set_muted(0, true);
+      - script.execute: alarm_check
+  - platform: template
+    id: bewaak2
+    name: "${baby2_naam} bewaken"
+    icon: mdi:baby-face-outline
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - lambda: id(ontvanger).set_muted(1, false);
+      - script.execute: alarm_check
+    on_turn_off:
+      - lambda: id(ontvanger).set_muted(1, true);
+      - script.execute: alarm_check
   # Voeding van scherm, codec en modules (GPIO60, actief laag).
   # Moet als eerste aan, voor scherm, touch en codec starten.
   - platform: gpio
@@ -385,7 +411,9 @@ script:
     then:
       - if:
           condition:
-            lambda: return !id(ontvanger).is_connected(0) || !id(ontvanger).is_connected(1);
+            lambda: |-
+              return (id(bewaak1).state && !id(ontvanger).is_connected(0)) ||
+                     (id(bewaak2).state && !id(ontvanger).is_connected(1));
           then:
             - lambda: id(alarm_actief) = true;
             - lvgl.label.update:
@@ -393,8 +421,9 @@ script:
                 text: !lambda |-
                   std::string s = "Verbinding kwijt:\n";
                   bool first = true;
-                  for (int i = 0; i < id(ontvanger).source_count(); i++) {
-                    if (!id(ontvanger).is_connected(i)) {
+                  const bool bewaak[2] = {id(bewaak1).state, id(bewaak2).state};
+                  for (int i = 0; i < id(ontvanger).source_count() && i < 2; i++) {
+                    if (bewaak[i] && !id(ontvanger).is_connected(i)) {
                       if (!first) s += ", ";
                       s += id(ontvanger).source_name(i);
                       first = false;

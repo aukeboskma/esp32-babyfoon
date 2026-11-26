@@ -7,6 +7,7 @@ Every change gets a new version number. You can see the version in:
 
 | Version | Date | Changes |
 |---|---|---|
+| parent 1.0.7 | 2026-11-26 | Parent unit: per-room **bewaken** (monitor) switch in Home Assistant. Off = no alarm and no audio from that room; the setting survives a restart. |
 | parent 1.0.6 | 2026-11-26 | Parent unit: I2S bus in `full_duplex` mode, so the speaker (always running) no longer blocks the microphone, and the ES8311 gets one shared clock. The **Test geluid** button logs the speaker, codec and amplifier state. |
 | parent 1.0.5 | 2026-11-26 | Parent unit: **Test geluid** button (short RTTTL tone) and DEBUG logging for the speaker, mixer and codec, to find out why there is no sound. |
 | parent 1.0.4 | 2026-11-26 | Parent unit: patched local `cst9220` component. It retries setup up to 15 times (the touch controller shares its reset with the display and may still be booting), continues with a warning on an unexpected check code or chip ID, and shows the check code in `dump_config`. New **Herstart** (restart) button. |
