@@ -9,7 +9,8 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.4
+#  VERSIE 1.0.5
+#   1.0.5  knop Test geluid, extra log voor de luidspreker
 #   1.0.4  touch probeert opnieuw bij opstarten, knop Herstart in HA
 #   1.0.3  log ook via de USB-C poort (USB_CDC)
 #   1.0.2  codec op het juiste I2C-adres (0x19)
@@ -18,7 +19,7 @@
 # =====================================================================
 
 substitutions:
-  versie: "1.0.4"
+  versie: "1.0.5"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -55,7 +56,17 @@ psram:
   speed: 200MHz
 
 logger:
-  level: INFO
+  level: DEBUG
+  logs:
+    # Alleen de geluidsonderdelen uitgebreid, de rest blijft rustig
+    sensor: INFO
+    light: INFO
+    binary_sensor: INFO
+    lvgl: INFO
+    i2s_audio.speaker: DEBUG
+    mixer_speaker: DEBUG
+    es8311: DEBUG
+    rtttl: DEBUG
   # De USB-C poort van de Mosaico is USB-OTG: log daarlangs zichtbaar maken
   hardware_uart: USB_CDC
 
@@ -338,6 +349,15 @@ globals:
 button:
   - platform: restart
     name: "Herstart"
+  # Speelt een kort toontje: test luidspreker, versterker en codec
+  - platform: template
+    name: "Test geluid"
+    icon: mdi:speaker
+    on_press:
+      - switch.turn_on: versterker
+      - rtttl.play:
+          id: alarm_toon
+          rtttl: "test:d=8,o=5,b=140:c,e,g,c6"
   - platform: template
     name: "Alarm gezien"
     icon: mdi:bell-off
