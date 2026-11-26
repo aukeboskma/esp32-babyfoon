@@ -9,7 +9,8 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.5
+#  VERSIE 1.0.6
+#   1.0.6  I2S full duplex (luidspreker en microfoon tegelijk), status bij Test geluid
 #   1.0.5  knop Test geluid, extra log voor de luidspreker
 #   1.0.4  touch probeert opnieuw bij opstarten, knop Herstart in HA
 #   1.0.3  log ook via de USB-C poort (USB_CDC)
@@ -19,7 +20,7 @@
 # =====================================================================
 
 substitutions:
-  versie: "1.0.5"
+  versie: "1.0.6"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -146,6 +147,8 @@ i2s_audio:
     i2s_lrclk_pin: GPIO49
     i2s_bclk_pin: GPIO37
     i2s_mclk_pin: GPIO54
+    # ES8311 doet luidspreker en microfoon op dezelfde klok: beide tegelijk
+    full_duplex: true
 
 audio_dac:
   - platform: es8311
@@ -358,6 +361,15 @@ button:
       - rtttl.play:
           id: alarm_toon
           rtttl: "test:d=8,o=5,b=140:c,e,g,c6"
+      - delay: 500ms
+      - lambda: |-
+          ESP_LOGI("test_geluid", "luidspreker: %s, volume %.2f, mute %s",
+                   id(spk_hw).is_running() ? "aan" : (id(spk_hw).is_stopped() ? "UIT" : "bezig"),
+                   id(spk_hw).get_volume(), YESNO(id(spk_hw).get_mute_state()));
+          ESP_LOGI("test_geluid", "babyfoons: %s, alarm: %s",
+                   id(rx_in).is_running() ? "aan" : "UIT", id(alarm_in).is_running() ? "aan" : "UIT");
+          ESP_LOGI("test_geluid", "codec: volume %.2f, mute %s, versterker %s",
+                   id(codec).volume(), YESNO(id(codec).is_muted()), ONOFF(id(versterker).state));
   - platform: template
     name: "Alarm gezien"
     icon: mdi:bell-off
