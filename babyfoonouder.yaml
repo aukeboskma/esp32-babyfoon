@@ -9,7 +9,8 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.3
+#  VERSIE 1.0.4
+#   1.0.4  touch probeert opnieuw bij opstarten, knop Herstart in HA
 #   1.0.3  log ook via de USB-C poort (USB_CDC)
 #   1.0.2  codec op het juiste I2C-adres (0x19)
 #   1.0.1  scherm- en codecvoeding (GPIO60) aan, touch na scherm-reset
@@ -17,7 +18,7 @@
 # =====================================================================
 
 substitutions:
-  versie: "1.0.3"
+  versie: "1.0.4"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -80,7 +81,8 @@ external_components:
   - source:
       type: local
       path: components
-    components: [babyfoon_receiver]
+    # cst9220: eigen versie die opnieuw probeert (touch deelt reset met scherm)
+    components: [babyfoon_receiver, cst9220]
 
 # ---------------------------------------------------------------------
 #  Hardware ESP-Mosaico V1.2
@@ -334,6 +336,8 @@ globals:
     initial_value: "0"
 
 button:
+  - platform: restart
+    name: "Herstart"
   - platform: template
     name: "Alarm gezien"
     icon: mdi:bell-off
