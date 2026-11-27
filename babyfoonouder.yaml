@@ -3,13 +3,14 @@
 #
 #  Wat dit doet:
 #   - Luistert naar twee babyfoons tegelijk (zelfde stream als de app)
-#   - Touchscherm: per babyfoon status, volumemeter, dempen, terugpraten
+#   - Touchscherm: per babyfoon status, volumemeter, luisteren aan/uit, terugpraten
 #   - ALARM (geluid + trillen + rood scherm) als een babyfoon wegvalt
 #   - Volume, scherm en batterij ook in Home Assistant
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.8
+#  VERSIE 1.0.9
+#   1.0.9  meeluisteren per kamer aan/uit: knop op scherm + schakelaar in HA
 #   1.0.8  I2S data-pinnen goed om: luidspreker GPIO52, microfoon GPIO40 (volgens Espressif BSP)
 #   1.0.7  schakelaar per babyfoon "bewaken" (uit = geen alarm, geen geluid)
 #   1.0.6  I2S full duplex (luidspreker en microfoon tegelijk), status bij Test geluid
@@ -22,7 +23,7 @@
 # =====================================================================
 
 substitutions:
-  versie: "1.0.8"
+  versie: "1.0.9"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -39,7 +40,11 @@ esphome:
     name: "thuis.babyfoon-ouder"
     version: "${versie}"
   on_boot:
-    priority: 600
+  - priority: -100
+    then:
+      - lambda: id(ui_klaar) = true;
+      - script.execute: geluid_bijwerken
+  - priority: 600
     then:
       - switch.turn_on: versterker
       - light.turn_on:
@@ -198,6 +203,27 @@ rtttl:
   speaker: alarm_in
 
 switch:
+  # Meeluisteren op de ouderunit aan/uit (ook via de knop op het scherm)
+  - platform: template
+    id: luister1
+    name: "${baby1_naam} luisteren"
+    icon: mdi:ear-hearing
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: geluid_bijwerken
+    on_turn_off:
+      - script.execute: geluid_bijwerken
+  - platform: template
+    id: luister2
+    name: "${baby2_naam} luisteren"
+    icon: mdi:ear-hearing
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: geluid_bijwerken
+    on_turn_off:
+      - script.execute: geluid_bijwerken
   # Babyfoon tijdelijk uitsluiten: uit = geen alarm en geen geluid van die kamer
   - platform: template
     id: bewaak1
@@ -206,10 +232,10 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
-      - lambda: id(ontvanger).set_muted(0, false);
+      - script.execute: geluid_bijwerken
       - script.execute: alarm_check
     on_turn_off:
-      - lambda: id(ontvanger).set_muted(0, true);
+      - script.execute: geluid_bijwerken
       - script.execute: alarm_check
   - platform: template
     id: bewaak2
@@ -218,10 +244,10 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
-      - lambda: id(ontvanger).set_muted(1, false);
+      - script.execute: geluid_bijwerken
       - script.execute: alarm_check
     on_turn_off:
-      - lambda: id(ontvanger).set_muted(1, true);
+      - script.execute: geluid_bijwerken
       - script.execute: alarm_check
   # Voeding van scherm, codec en modules (GPIO60, actief laag).
   # Moet als eerste aan, voor scherm, touch en codec starten.
@@ -369,6 +395,9 @@ binary_sensor:
           brightness: 70%
 
 globals:
+  - id: ui_klaar
+    type: bool
+    initial_value: "false"
   - id: alarm_actief
     type: bool
     initial_value: "false"
@@ -407,6 +436,58 @@ button:
 #  Alarm: geluid + trillen + rood scherm zolang een babyfoon weg is
 # ---------------------------------------------------------------------
 script:
+  # Geluid per kamer: alleen hoorbaar als "bewaken" en "luisteren" allebei aan staan.
+  # Werkt ook de knoppen op het scherm bij.
+  - id: geluid_bijwerken
+    mode: queued
+    then:
+      - lambda: |-
+          id(ontvanger).set_muted(0, !(id(bewaak1).state && id(luister1).state));
+          id(ontvanger).set_muted(1, !(id(bewaak2).state && id(luister2).state));
+      # Scherm pas bijwerken als LVGL klaar is (na het opstarten)
+      - if:
+          condition:
+            lambda: return id(ui_klaar);
+          then:
+          - if:
+              condition:
+                switch.is_on: luister1
+              then:
+                - lvgl.widget.update:
+                    id: baby1_stil
+                    state:
+                      checked: false
+                - lvgl.label.update:
+                    id: baby1_stil_tekst
+                    text: "Luistert"
+              else:
+                - lvgl.widget.update:
+                    id: baby1_stil
+                    state:
+                      checked: true
+                - lvgl.label.update:
+                    id: baby1_stil_tekst
+                    text: "Stil"
+          - if:
+              condition:
+                switch.is_on: luister2
+              then:
+                - lvgl.widget.update:
+                    id: baby2_stil
+                    state:
+                      checked: false
+                - lvgl.label.update:
+                    id: baby2_stil_tekst
+                    text: "Luistert"
+              else:
+                - lvgl.widget.update:
+                    id: baby2_stil
+                    state:
+                      checked: true
+                - lvgl.label.update:
+                    id: baby2_stil_tekst
+                    text: "Stil"
+
   - id: alarm_check
     mode: restart
     then:
@@ -557,10 +638,18 @@ lvgl:
                   widgets:
                     - label:
                         align: CENTER
-                        text: "Dempen"
+                        id: baby1_stil_tekst
+                        text: "Luistert"
                         text_font: montserrat_24
+                  # Ingedrukt (oranje) = stil. Zet de schakelaar in HA mee.
                   on_value:
-                    - lambda: id(ontvanger).set_muted(0, x);
+                    - if:
+                        condition:
+                          lambda: return x;
+                        then:
+                          - switch.turn_off: luister1
+                        else:
+                          - switch.turn_on: luister1
               - button:
                   id: baby1_praat
                   x: 166
@@ -626,10 +715,18 @@ lvgl:
                   widgets:
                     - label:
                         align: CENTER
-                        text: "Dempen"
+                        id: baby2_stil_tekst
+                        text: "Luistert"
                         text_font: montserrat_24
+                  # Ingedrukt (oranje) = stil. Zet de schakelaar in HA mee.
                   on_value:
-                    - lambda: id(ontvanger).set_muted(1, x);
+                    - if:
+                        condition:
+                          lambda: return x;
+                        then:
+                          - switch.turn_off: luister2
+                        else:
+                          - switch.turn_on: luister2
               - button:
                   id: baby2_praat
                   x: 166

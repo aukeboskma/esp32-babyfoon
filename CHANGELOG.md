@@ -7,6 +7,7 @@ Every change gets a new version number. You can see the version in:
 
 | Version | Date | Changes |
 |---|---|---|
+| parent 1.0.9 | 2026-11-27 | Parent unit: listen on/off per room. On-screen button (**Luistert** / **Stil**) and **luisteren** switches in Home Assistant, kept in sync and restored after a restart. Audio plays only when both *bewaken* and *luisteren* are on. |
 | parent 1.0.8 | 2026-11-27 | Parent unit: fix no sound. I2S data pins were swapped: ESP output (speaker, codec DSDIN) is GPIO52 and ESP input (microphone, codec SDOUT) is GPIO40, as in the official esp-mosaico-bsp. The user guide names the pins from the codec side. |
 | parent 1.0.7 | 2026-11-26 | Parent unit: per-room **bewaken** (monitor) switch in Home Assistant. Off = no alarm and no audio from that room; the setting survives a restart. |
 | parent 1.0.6 | 2026-11-26 | Parent unit: I2S bus in `full_duplex` mode, so the speaker (always running) no longer blocks the microphone, and the ES8311 gets one shared clock. The **Test geluid** button logs the speaker, codec and amplifier state. |
