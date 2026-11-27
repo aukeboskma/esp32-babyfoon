@@ -9,7 +9,8 @@
 #
 #  Nodig: ESPHome 2026.11 of nieuwer (geluid op de ESP32-S31)
 #
-#  VERSIE 1.0.7
+#  VERSIE 1.0.8
+#   1.0.8  I2S data-pinnen goed om: luidspreker GPIO52, microfoon GPIO40 (volgens Espressif BSP)
 #   1.0.7  schakelaar per babyfoon "bewaken" (uit = geen alarm, geen geluid)
 #   1.0.6  I2S full duplex (luidspreker en microfoon tegelijk), status bij Test geluid
 #   1.0.5  knop Test geluid, extra log voor de luidspreker
@@ -21,7 +22,7 @@
 # =====================================================================
 
 substitutions:
-  versie: "1.0.7"
+  versie: "1.0.8"
   name: babyfoonouder
   friendly_name: Babyfoon ouderunit
   # IP-adressen van de babyfoons (vast IP in je router!)
@@ -166,7 +167,7 @@ speaker:
   - platform: i2s_audio
     id: spk_hw
     i2s_audio_id: i2s_bus
-    i2s_dout_pin: GPIO40
+    i2s_dout_pin: GPIO52   # ESP -> codec (DSDIN), zie esp-mosaico-bsp
     dac_type: external
     audio_dac: codec
     sample_rate: 16000
@@ -185,7 +186,7 @@ microphone:
   - platform: i2s_audio
     id: mic
     i2s_audio_id: i2s_bus
-    i2s_din_pin: GPIO52
+    i2s_din_pin: GPIO40    # codec (SDOUT) -> ESP
     adc_type: external
     pdm: false
     sample_rate: 16000
